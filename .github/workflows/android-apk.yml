@@ -49,7 +49,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      # The runner image already ships the Android SDK. setup-android only
+      # exported the paths, and it started failing trying to install the
+      # long-obsolete "tools" package — so point at the SDK directly and
+      # drop the dependency.
+      - name: Locate the Android SDK
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "::error::No Android SDK at $SDK"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "Using $SDK"
+          ls "$SDK"
 
       - name: Point Bubblewrap at the runner's JDK and SDK
         run: |
