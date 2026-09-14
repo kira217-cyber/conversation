@@ -13,6 +13,7 @@ export default function Diagnostics() {
   const [rows, setRows] = useState<Row[]>([]);
   const [micRows, setMicRows] = useState<Row[]>([]);
   const [iceRows, setIceRows] = useState<Row[]>([]);
+  const [pushRows, setPushRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
@@ -116,6 +117,79 @@ export default function Diagnostics() {
     setBusy(null);
   }
 
+  /**
+   * Splits the two halves of "notifications do not work": whether this
+   * device can display one at all, and whether a push from the server
+   * reaches it. Chrome's "Possible spam" means the push arrived but the
+   * worker failed to show anything — so testing them separately says
+   * which half to fix.
+   */
+  async function testPush() {
+    setBusy("push");
+    const out: Row[] = [];
+
+    try {
+      out.push({
+        label: "Notification permission",
+        ok: Notification.permission === "granted",
+        note: Notification.permission,
+      });
+
+      const reg = await navigator.serviceWorker.getRegistration();
+      out.push({
+        label: "Service worker registered",
+        ok: !!reg,
+        note: reg?.active ? "active" : reg ? "not active yet" : "missing",
+      });
+
+      const sub = await reg?.pushManager.getSubscription();
+      out.push({
+        label: "Push subscription",
+        ok: !!sub,
+        note: sub ? new URL(sub.endpoint).host : "none — turn notifications on first",
+      });
+
+      // Show one directly, without involving the server or the push
+      // service. If this fails, nothing else can possibly work.
+      if (reg && Notification.permission === "granted") {
+        try {
+          await reg.showNotification("Conversation", {
+            body: "Shown directly by this page 💜",
+            tag: "diag-local",
+            icon: "/icon-192.png",
+            badge: "/badge-72.png",
+          });
+          out.push({ label: "Show a notification locally", ok: true, note: "check your shade" });
+        } catch (err) {
+          out.push({
+            label: "Show a notification locally",
+            ok: false,
+            note: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+          });
+        }
+      }
+
+      // Now the full path: server -> push service -> worker -> shade
+      const res = await fetch("/api/push/test", { method: "POST" });
+      const json = (await res.json()) as {
+        message?: string;
+        data?: { sent?: number; removed?: number };
+      };
+      out.push({
+        label: "Send through the server",
+        ok: res.ok && (json.data?.sent ?? 0) > 0,
+        note: res.ok
+          ? `${json.data?.sent ?? 0} device(s), ${json.data?.removed ?? 0} stale removed`
+          : json.message ?? `HTTP ${res.status}`,
+      });
+    } catch (err) {
+      out.push({ label: "Failed", ok: false, note: String(err) });
+    }
+
+    setPushRows(out);
+    setBusy(null);
+  }
+
   return (
     <div className="mx-auto min-h-dvh max-w-lg px-5 py-8">
       <h1 className="text-xl font-semibold text-white">Device check</h1>
@@ -135,10 +209,14 @@ export default function Diagnostics() {
         <Btn onClick={testIce} busy={busy === "ice"}>
           📞 Test call network
         </Btn>
+        <Btn onClick={testPush} busy={busy === "push"}>
+          🔔 Test notifications
+        </Btn>
       </div>
 
       {micRows.length > 0 && <Section title="Microphone / camera" rows={micRows} />}
       {iceRows.length > 0 && <Section title="Call network" rows={iceRows} />}
+      {pushRows.length > 0 && <Section title="Notifications" rows={pushRows} />}
 
       <div className="mt-8 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-xs leading-relaxed text-[var(--color-muted)]">
         <p className="mb-2 font-semibold text-white">Browser (user agent)</p>
