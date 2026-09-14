@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Heart, Loader2, Lock, Mail } from "lucide-react";
 import { api, ApiError } from "@/lib/client/api";
-import { getDeviceId, setTabSession } from "@/lib/client/device";
+import { getDeviceId, isInstalledApp, setTabSession } from "@/lib/client/device";
 
 const REASONS: Record<string, string> = {
   idle: "You were signed out after a long time away",
@@ -39,7 +39,8 @@ function LoginForm() {
       const data = await api<{ sessionId: string }>("/api/auth/login", {
         method: "POST",
         silent401: true,
-        json: { email, password, deviceId: getDeviceId() },
+        // The installed app gets a session that survives being closed
+        json: { email, password, deviceId: getDeviceId(), persistent: isInstalledApp() },
       });
 
       // Mark this tab — without it, the next visit counts as a reopened tab

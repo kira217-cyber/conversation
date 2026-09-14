@@ -12,6 +12,8 @@ import ChatHeader from "./ChatHeader";
 import MessageList from "./MessageList";
 import Composer from "./Composer";
 import CallOverlay from "./CallOverlay";
+import NotificationPrompt from "./NotificationPrompt";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export default function ChatApp({ initial }: { initial: SessionInfo }) {
   const me = initial.user;
@@ -49,6 +51,7 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
     /* কল শেষ — আপাতত আলাদা কিছু দেখানোর দরকার নেই */
   }, []);
 
+  const push = usePushNotifications();
   const rtc = useWebRTC({ userChannel, partner, onCallEvent });
 
   /* ─────────────────── প্রথমবার ইতিহাস আনা ─────────────────── */
@@ -178,6 +181,46 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convoId, me.id, initial.session.id, logout]);
+
+  /* ─────────── ফিরে এলে সংযোগ জোড়া + বাদ পড়া মেসেজ আনা ─────────── */
+  useEffect(() => {
+    /**
+     * Android kills the web view in the background, which takes the
+     * WebSocket with it. Anything sent while it was gone never arrived,
+     * so on the way back: reconnect, then fetch and merge the latest.
+     */
+    const resync = async () => {
+      if (document.visibilityState !== "visible") return;
+
+      const pusher = getPusher();
+      if (pusher.connection.state !== "connected") pusher.connect();
+
+      try {
+        const data = await api<{ messages: Message[] }>("/api/messages?limit=40", {
+          silent401: true,
+        });
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => m.clientMsgId));
+          const missed = data.messages.filter((m) => !seen.has(m.clientMsgId));
+          if (missed.length === 0) return prev;
+          return [...prev, ...missed].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+          );
+        });
+      } catch {
+        // offline — the next visibility change will try again
+      }
+    };
+
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    window.addEventListener("online", resync);
+    return () => {
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+      window.removeEventListener("online", resync);
+    };
+  }, []);
 
   /* ─────────────────── "শেষ দেখা" তাজা রাখা ─────────────────── */
   useEffect(() => {
@@ -373,7 +416,10 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
         onVideoCall={() => rtc.startCall(true)}
         onLogout={() => logout("MANUAL")}
         callActive={!!rtc.call}
+        push={push}
       />
+
+      <NotificationPrompt push={push} />
 
       <MessageList
         ref={scroller}

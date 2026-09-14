@@ -39,17 +39,25 @@ async function signSessionToken(payload: SessionPayload, expiresAt: Date) {
     .sign(secret());
 }
 
+/** কত দিন ইনস্টল করা অ্যাপ লগইন থাকবে */
+const PERSISTENT_DAYS = 60;
+
 /**
- * Cookie-তে ইচ্ছে করেই maxAge/expires দেওয়া হয় না।
- * ফলে এটা "session cookie" — ব্রাউজার বন্ধ করলেই মুছে যায়।
- * ট্যাব বন্ধের ক্ষেত্রটা ক্লায়েন্টের sessionStorage marker সামলায়।
+ * ব্রাউজারে cookie-তে ইচ্ছে করেই maxAge দেওয়া হয় না — ব্রাউজার বন্ধ
+ * করলেই মুছে যায়, আর ট্যাব বন্ধের ক্ষেত্রটা sessionStorage marker সামলায়।
+ *
+ * কিন্তু ইনস্টল করা অ্যাপে (APK / home screen) ওই নিয়ম চলে না: Android
+ * ব্যাকগ্রাউন্ডে Chrome এর প্রসেস মেরে ফেলে, তখন session cookie আর
+ * marker দুটোই হারিয়ে যায় — ফলে প্রতিবার অ্যাপ খুললেই লগআউট।
+ * তাই ইনস্টল করা অ্যাপ টেকসই cookie পায়, আসল অ্যাপের মতোই।
  */
-function cookieOptions() {
+function cookieOptions(persistent = false) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
+    ...(persistent ? { maxAge: PERSISTENT_DAYS * 24 * 60 * 60 } : {}),
   };
 }
 
@@ -90,10 +98,14 @@ export async function createSession(opts: {
   deviceId: string;
   userAgent: string | null;
   ip: string | null;
+  /** true when signing in from the installed app rather than a browser tab */
+  persistent?: boolean;
 }) {
-  const { user, deviceId, userAgent, ip } = opts;
+  const { user, deviceId, userAgent, ip, persistent = false } = opts;
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + idleLimitMs());
+  const expiresAt = new Date(
+    now.getTime() + (persistent ? PERSISTENT_DAYS * 24 * 60 * 60 * 1000 : idleLimitMs()),
+  );
   const refreshToken = randomToken();
 
   const { session, killed } = await prisma.$transaction(async (tx) => {
@@ -109,6 +121,7 @@ export async function createSession(opts: {
         deviceId,
         deviceLabel: deviceLabelFrom(userAgent),
         ipAddress: ip,
+        persistent,
         lastActiveAt: now,
         expiresAt,
       },
@@ -123,7 +136,7 @@ export async function createSession(opts: {
   );
 
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, token, cookieOptions());
+  jar.set(SESSION_COOKIE, token, cookieOptions(persistent));
 
   return { session, killedCount: killed };
 }
@@ -155,7 +168,18 @@ export async function getAuth(opts?: { touch?: boolean }): Promise<AuthResult> {
   if (session.deviceId !== payload.did) return { ok: false, reason: "DEVICE_MISMATCH" };
 
   const idleFor = Date.now() - session.lastActiveAt.getTime();
-  if (idleFor > idleLimitMs()) {
+
+  // ইনস্টল করা অ্যাপ নিষ্ক্রিয়তার কারণে বেরোয় না — ফোনের অ্যাপ তো
+  // ঘণ্টার পর ঘণ্টা বন্ধ থাকতেই পারে। তার বদলে expiresAt সীমা।
+  if (session.persistent && session.expiresAt < new Date()) {
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { revokedAt: new Date(), revokedReason: "EXPIRED" },
+    });
+    return { ok: false, reason: "SESSION_IDLE" };
+  }
+
+  if (!session.persistent && idleFor > idleLimitMs()) {
     await prisma.session.update({
       where: { id: session.id },
       data: { revokedAt: new Date(), revokedReason: "IDLE_TIMEOUT" },

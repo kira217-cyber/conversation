@@ -15,6 +15,8 @@ const schema = z.object({
   email: z.email().transform((v) => v.toLowerCase().trim()),
   password: z.string().min(1),
   deviceId: z.string().min(8).max(64),
+  /** true from the installed app — that session survives the app closing */
+  persistent: z.boolean().default(false),
 });
 
 // লগইন fail হলে সবসময় একই বার্তা — কোন ইমেইলটা আছে সেটা যেন বোঝা না যায়
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = schema.safeParse(await req.json());
     if (!parsed.success) return zodFail(parsed.error);
-    const { email, password, deviceId } = parsed.data;
+    const { email, password, deviceId, persistent } = parsed.data;
 
     const e = env();
     const user = await prisma.user.findUnique({ where: { email } });
@@ -76,6 +78,7 @@ export async function POST(req: NextRequest) {
       deviceId,
       userAgent: req.headers.get("user-agent"),
       ip,
+      persistent,
     });
 
     await prisma.user.update({
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    await audit("LOGIN_SUCCESS", user.id, { deviceId, killedSessions: killedCount });
+    await audit("LOGIN_SUCCESS", user.id, { deviceId, persistent, killedSessions: killedCount });
 
     return ok(
       {
@@ -104,6 +107,7 @@ export async function POST(req: NextRequest) {
           role: user.role,
         },
         sessionId: session.id,
+        persistent,
         idleTimeoutMinutes: e.IDLE_TIMEOUT_MINUTES,
       },
       "Welcome 💜",

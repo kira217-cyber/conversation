@@ -12,7 +12,7 @@ import {
   Video,
   WifiOff,
 } from "lucide-react";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
+import type { usePushNotifications } from "@/hooks/usePushNotifications";
 import type { Partner } from "@/types";
 
 export default function ChatHeader(props: {
@@ -27,10 +27,11 @@ export default function ChatHeader(props: {
   onCall: () => void;
   onVideoCall: () => void;
   onLogout: () => void;
+  /** shared with the banner, so both show the same state */
+  push: ReturnType<typeof usePushNotifications>;
 }) {
-  const { partner, lastSeen, online, typing, connected, daysTogether, callActive } = props;
+  const { partner, lastSeen, online, typing, connected, daysTogether, callActive, push } = props;
   const [menu, setMenu] = useState(false);
-  const push = usePushNotifications();
 
   const status = typing
     ? "typing..."

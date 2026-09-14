@@ -63,6 +63,9 @@ model Session {
   refreshTokenHash String    @unique
   deviceId         String
   deviceLabel      String?
+  /// Installed app (APK / home screen) — stays signed in like a real app.
+  /// Browser sessions still die on tab close and after 30 idle minutes.
+  persistent       Boolean   @default(false)
   ipAddress        String?
   /// ← ৩০ মিনিট idle check এই ফিল্ডের উপর হয়
   lastActiveAt     DateTime  @default(now())

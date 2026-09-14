@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -145,16 +146,24 @@ export async function POST(req: NextRequest) {
     // socketId দেওয়ায় পাঠানোর ট্যাবে নিজের মেসেজ দ্বিতীয়বার আসবে না
     await emit(CH.convo(conversationId), EV.messageNew, dto, input.socketId);
 
-    // Reaches the other person's phone even with the app closed.
-    // Deliberately not awaited alongside the response path above — but on
-    // serverless an unawaited promise can be killed, so we do wait for it.
-    const partner = await getPartner(auth.user.id);
-    if (partner) {
-      await pushToUser(
-        partner.id,
-        messageNotification(auth.user.displayName, input.type, input.body?.trim() ?? ""),
-      );
-    }
+    // The notification must not hold up the reply. It costs a database read
+    // plus a round trip to the push service, and waiting for that made every
+    // message visibly slower to send. waitUntil lets the response go now and
+    // the work finish afterwards, without the platform killing it.
+    waitUntil(
+      (async () => {
+        try {
+          const partner = await getPartner(auth.user.id);
+          if (!partner) return;
+          await pushToUser(
+            partner.id,
+            messageNotification(auth.user.displayName, input.type, input.body?.trim() ?? ""),
+          );
+        } catch (err) {
+          console.error("[push] notify failed", err);
+        }
+      })(),
+    );
 
     return ok({ message: dto, duplicate: false }, "Sent");
   } catch (err) {

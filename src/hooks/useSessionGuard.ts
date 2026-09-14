@@ -2,10 +2,15 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/client/api";
-import { clearTabSession, getTabSession, setTabSession } from "@/lib/client/device";
+import {
+  clearTabSession,
+  getTabSession,
+  isInstalledApp,
+  setTabSession,
+} from "@/lib/client/device";
 import { disconnectPusher } from "@/lib/client/pusher";
 
-/** কত পরপর "আমি এখনো আছি" বার্তা যাবে */
+/** How often "I am still here" goes out */
 const HEARTBEAT_MS = 60_000;
 
 type Options = {
@@ -13,21 +18,23 @@ type Options = {
 };
 
 /**
- * নিয়ম দুটো, আর দুটোই সহজ:
+ * Two rules, and which pair applies depends on where the app is running.
  *
- *   ট্যাব খোলা আছে  →  লগইন থাকবে। যত ঘণ্টাই হোক।
- *   ট্যাব বন্ধ হলো   →  লগআউট।
+ *   In a browser tab
+ *     tab open   → stays signed in, for as long as it is open
+ *     tab closed → signed out
  *
- * কীভাবে: ট্যাব খোলা থাকলে প্রতি মিনিটে একটা heartbeat যায় — এটাই
- * "আমি সাইটে আছি" এর প্রমাণ। মাউস নড়ছে কিনা সেটা দেখা হয় না, কারণ
- * ফোনে চ্যাট পড়তে থাকলে কোনো ইভেন্টই হয় না।
+ *   In the installed app (APK / Home Screen)
+ *     stays signed in, like any other app on the phone
  *
- * ট্যাব বন্ধ হলে heartbeat থেমে যায়। সার্ভারের ৩০ মিনিটের মেয়াদ তখন
- * নিরাপত্তার জাল হিসেবে কাজ করে — beacon পৌঁছাক বা না পৌঁছাক
- * (ব্রাউজার ক্র্যাশ, ল্যাপটপ ঘুমিয়ে যাওয়া), session আপনাআপনি মরে যায়।
+ * The split matters. Android destroys the web view whenever the app goes
+ * to the background, which wipes sessionStorage — indistinguishable from
+ * the tab being closed. Applying the browser rule there signed the person
+ * out every single time they switched apps.
  */
 export function useSessionGuard({ sessionId }: Options) {
   const done = useRef(false);
+  const installed = useRef(false);
 
   const logout = useCallback(async (reason: string) => {
     if (done.current) return;
@@ -38,56 +45,64 @@ export function useSessionGuard({ sessionId }: Options) {
     try {
       await api("/api/auth/logout", { method: "POST", json: { reason }, silent401: true });
     } catch {
-      /* যাই হোক, লগইন পেজে পাঠাবই */
+      /* head for the login page regardless */
     }
     window.location.href = `/login?reason=${reason === "TAB_CLOSED" ? "tab-closed" : "expired"}`;
   }, []);
 
-  /* ── ১. এই ট্যাবটা কি আগে বন্ধ হয়েছিল? ── */
+  /* ── 1. Was this tab closed and reopened? (browser only) ── */
   useEffect(() => {
+    installed.current = isInstalledApp();
+    if (installed.current) {
+      // Mark it anyway, so the app keeps working if it is later opened in a tab
+      setTabSession(sessionId);
+      return;
+    }
+
     const marker = getTabSession();
     if (!marker) {
-      // cookie আছে কিন্তু ট্যাব-মার্কার নেই = ট্যাব বন্ধ করে আবার খোলা হয়েছে
+      // Cookie present but no tab marker = the tab was closed and reopened
       void logout("TAB_CLOSED");
       return;
     }
     if (marker !== sessionId) setTabSession(sessionId);
   }, [sessionId, logout]);
 
-  /* ── ২. ট্যাব বন্ধ হওয়ার মুহূর্তে সার্ভারকে জানাও ── */
+  /* ── 2. Tell the server the moment the tab closes (browser only) ── */
   useEffect(() => {
+    if (isInstalledApp()) return;
+
     function onPageHide(e: PageTransitionEvent) {
-      // bfcache এ গেলে সত্যিকারের বন্ধ নয় — ফিরে এলে আবার কাজ চলবে
+      // bfcache is not a real close — coming back should just resume
       if (e.persisted || done.current) return;
       clearTabSession();
       navigator.sendBeacon?.("/api/auth/logout", new Blob([], { type: "text/plain" }));
     }
-    // beforeunload মোবাইলে প্রায়ই fire করে না, তাই pagehide
+    // beforeunload often does not fire on mobile, so pagehide
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
   }, []);
 
-  /* ── ৩. ট্যাব খোলা থাকলে heartbeat ── */
+  /* ── 3. Heartbeat while open ── */
   useEffect(() => {
     let last = 0;
 
     const beat = (force = false) => {
       if (done.current) return;
       const now = Date.now();
-      // অল্প সময়ের মধ্যে বারবার নয় (ট্যাব বদল করলে যেন বন্যা না হয়)
       if (!force && now - last < HEARTBEAT_MS - 5_000) return;
       last = now;
       api("/api/auth/session", { method: "POST", silent401: true }).catch(() => {
-        // নেট নেই বা session বাতিল — পরের API কলেই ধরা পড়বে
+        // offline, or the session is gone — the next real request will say so
       });
     };
 
-    beat(true); // পেজ খোলার সাথে সাথেই একবার
+    beat(true);
 
     const timer = window.setInterval(() => beat(), HEARTBEAT_MS);
 
-    // ব্যাকগ্রাউন্ডে থাকলে ব্রাউজার টাইমার ধীর করে দেয়,
-    // তাই ফিরে আসার সাথে সাথে একটা পাঠিয়ে দিই
+    // Background tabs get their timers slowed right down, so send one
+    // the moment we are back in front of the person.
     const onVisible = () => {
       if (document.visibilityState === "visible") beat(true);
     };
