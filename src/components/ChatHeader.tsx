@@ -1,7 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Heart, LogOut, MoreVertical, Phone, Video, WifiOff } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  Heart,
+  Loader2,
+  LogOut,
+  MoreVertical,
+  Phone,
+  Video,
+  WifiOff,
+} from "lucide-react";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import type { Partner } from "@/types";
 
 export default function ChatHeader(props: {
@@ -19,6 +30,7 @@ export default function ChatHeader(props: {
 }) {
   const { partner, lastSeen, online, typing, connected, daysTogether, callActive } = props;
   const [menu, setMenu] = useState(false);
+  const push = usePushNotifications();
 
   const status = typing
     ? "typing..."
@@ -100,12 +112,66 @@ export default function ChatHeader(props: {
         {menu && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-            <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-panel-2)] py-1 shadow-2xl">
+            <div className="absolute right-0 top-11 z-20 w-60 overflow-hidden rounded-xl border border-[var(--color-line)] bg-[var(--color-panel-2)] py-1 shadow-2xl">
+              {push.state === "on" ? (
+                <>
+                  <button
+                    onClick={() => void push.disable()}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white hover:bg-white/5"
+                  >
+                    <BellOff className="h-4 w-4 shrink-0" />
+                    Turn off notifications
+                  </button>
+                  <button
+                    onClick={() => {
+                      void push.sendTest();
+                      setMenu(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-[var(--color-muted)] hover:bg-white/5"
+                  >
+                    <Bell className="h-4 w-4 shrink-0" />
+                    Send a test notification
+                  </button>
+                </>
+              ) : push.state === "working" ? (
+                <div className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-muted)]">
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                  Working...
+                </div>
+              ) : push.state === "denied" ? (
+                <p className="px-4 py-2.5 text-xs leading-relaxed text-[var(--color-muted)]">
+                  Notifications are blocked. Allow them for this site in your browser settings.
+                </p>
+              ) : push.state === "needs-install" ? (
+                <p className="px-4 py-2.5 text-xs leading-relaxed text-[var(--color-muted)]">
+                  On iPhone, add this to your Home Screen first — then notifications can be turned
+                  on.
+                </p>
+              ) : push.state === "unsupported" ? (
+                <p className="px-4 py-2.5 text-xs leading-relaxed text-[var(--color-muted)]">
+                  This browser cannot show notifications.
+                </p>
+              ) : (
+                <button
+                  onClick={() => void push.enable()}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white hover:bg-white/5"
+                >
+                  <Bell className="h-4 w-4 shrink-0" />
+                  Turn on notifications
+                </button>
+              )}
+
+              {push.error && (
+                <p className="px-4 py-2 text-xs text-red-300">{push.error}</p>
+              )}
+
+              <div className="my-1 border-t border-[var(--color-line)]" />
+
               <button
                 onClick={props.onLogout}
                 className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-red-300 hover:bg-white/5"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4 shrink-0" />
                 Sign out
               </button>
             </div>

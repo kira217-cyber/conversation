@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AlertCircle, Check, CheckCheck, Clock, Reply, Trash2, X } from "lucide-react";
 import type { Message } from "@/types";
 import VoicePlayer from "./VoicePlayer";
@@ -24,6 +24,29 @@ export default function MessageBubble({
 }) {
   const [menu, setMenu] = useState(false);
   const [lightbox, setLightbox] = useState(false);
+
+  // Desktop reveals the actions on hover; phones have no hover, so a
+  // long press opens the same sheet.
+  const pressTimer = useRef<number | null>(null);
+  const pressed = useRef(false);
+
+  const openMenu = useCallback(() => {
+    if (!message.deletedForAll) setMenu(true);
+  }, [message.deletedForAll]);
+
+  const startPress = useCallback(() => {
+    pressed.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      pressed.current = true;
+      navigator.vibrate?.(12);
+      openMenu();
+    }, 420);
+  }, [openMenu]);
+
+  const cancelPress = useCallback(() => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  }, []);
 
   const time = new Date(message.createdAt).toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -64,6 +87,17 @@ export default function MessageBubble({
 
           <div
             onDoubleClick={() => !message.deletedForAll && onReact(message, "❤️")}
+            // Android fires contextmenu on long press
+            onContextMenu={(e) => {
+              e.preventDefault();
+              openMenu();
+            }}
+            onTouchStart={startPress}
+            onTouchEnd={cancelPress}
+            onTouchMove={cancelPress}
+            onTouchCancel={cancelPress}
+            // stops the iOS text-selection callout from hijacking the long press
+            style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
             className={`relative rounded-2xl px-3 py-2 shadow-sm ${
               mine
                 ? "rounded-br-md bg-[var(--color-bubble-out)] text-white"
@@ -91,7 +125,11 @@ export default function MessageBubble({
                 This message was deleted
               </p>
             ) : message.type === "IMAGE" && message.media ? (
-              <button onClick={() => setLightbox(true)} className="block">
+              <button
+                // a long press opened the menu — don't also open the viewer
+                onClick={() => !pressed.current && setLightbox(true)}
+                className="block"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={message.media.url}
@@ -146,7 +184,7 @@ export default function MessageBubble({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-2)]"
+            className="w-full max-w-sm overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-2)] pb-[env(safe-area-inset-bottom)]"
           >
             <div className="flex justify-around border-b border-[var(--color-line)] px-2 py-3">
               {QUICK_REACTIONS.map((emoji) => (

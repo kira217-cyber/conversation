@@ -46,10 +46,11 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  sessions Session[]
-  messages Message[] @relation("Sender")
-  calls    Call[]    @relation("Caller")
-  logs     AuditLog[]
+  sessions      Session[]
+  messages      Message[]          @relation("Sender")
+  calls         Call[]             @relation("Caller")
+  logs          AuditLog[]
+  pushSubs      PushSubscription[]
 
   @@index([email])
 }
@@ -148,6 +149,22 @@ model Call {
   durationSec    Int?
 
   @@index([conversationId, startedAt])
+}
+
+/// Web Push — একটা ডিভাইস/ব্রাউজারে নোটিফিকেশন পাঠানোর ঠিকানা।
+/// একজনের একাধিক থাকতে পারে (ফোনের APK + ল্যাপটপের ব্রাউজার)।
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  lastUsed  DateTime @default(now())
+
+  @@index([userId])
 }
 
 model AuditLog {

@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getConversationId } from "@/lib/convo";
+import { getConversationId, getPartner } from "@/lib/convo";
+import { messageNotification, pushToUser } from "@/lib/push";
 import { seal } from "@/lib/crypto";
 import { toDTO } from "@/lib/message";
 import { CH, EV, emit } from "@/lib/pusher";
@@ -143,6 +144,17 @@ export async function POST(req: NextRequest) {
 
     // socketId দেওয়ায় পাঠানোর ট্যাবে নিজের মেসেজ দ্বিতীয়বার আসবে না
     await emit(CH.convo(conversationId), EV.messageNew, dto, input.socketId);
+
+    // Reaches the other person's phone even with the app closed.
+    // Deliberately not awaited alongside the response path above — but on
+    // serverless an unawaited promise can be killed, so we do wait for it.
+    const partner = await getPartner(auth.user.id);
+    if (partner) {
+      await pushToUser(
+        partner.id,
+        messageNotification(auth.user.displayName, input.type, input.body?.trim() ?? ""),
+      );
+    }
 
     return ok({ message: dto, duplicate: false }, "Sent");
   } catch (err) {
