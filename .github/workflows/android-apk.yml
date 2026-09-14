@@ -1,0 +1,230 @@
+name: Build Android APK
+
+# Wraps the deployed PWA in a Trusted Web Activity, so the phone gets a real
+# app icon and Web Push notifications arrive under the app's own name.
+#
+# The signing key matters: Android will only install an update signed by the
+# same key. The first run creates one and uploads it as an artifact — save it,
+# then add it as the ANDROID_KEYSTORE_BASE64 secret so later builds reuse it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Domain the app points at (no https://)"
+        required: true
+        default: "conversation-02.vercel.app"
+      package_id:
+        description: "Android package id"
+        required: true
+        default: "app.ours.conversation"
+      app_name:
+        description: "App name"
+        required: true
+        default: "Conversation"
+      launcher_name:
+        description: "Name under the icon (keep it short)"
+        required: true
+        default: "Us"
+      version_code:
+        description: "Version code — must increase with every release"
+        required: true
+        default: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Point Bubblewrap at the runner's JDK and SDK
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}' "$JAVA_HOME" "$ANDROID_HOME" \
+            > ~/.bubblewrap/config.json
+          cat ~/.bubblewrap/config.json
+
+      - name: Restore or create the signing key
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p twa
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "Reusing the keystore from secrets"
+            echo "$KEYSTORE_B64" | base64 -d > twa/android.keystore
+            echo "password=$STORE_PASS" >> "$GITHUB_OUTPUT"
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No keystore secret — creating one for this build"
+            PW=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+            keytool -genkeypair -v \
+              -keystore twa/android.keystore \
+              -alias conversation \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PW" -keypass "$PW" \
+              -dname "CN=Conversation, OU=Personal, O=Personal, L=Dhaka, S=Dhaka, C=BD"
+            echo "password=$PW" >> "$GITHUB_OUTPUT"
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::A new signing key was created. Download the keystore artifact and store it as a secret, or future updates cannot be installed over this build."
+          fi
+
+      # Bubblewrap's `init` is interactive, so the manifest it would have
+      # written is provided directly and `update` scaffolds from it.
+      - name: Write twa-manifest.json
+        env:
+          HOST: ${{ inputs.host }}
+          PKG: ${{ inputs.package_id }}
+          APP_NAME: ${{ inputs.app_name }}
+          LAUNCHER: ${{ inputs.launcher_name }}
+          VCODE: ${{ inputs.version_code }}
+        run: |
+          cat > twa/twa-manifest.json <<JSON
+          {
+            "packageId": "$PKG",
+            "host": "$HOST",
+            "name": "$APP_NAME",
+            "launcherName": "$LAUNCHER",
+            "display": "standalone",
+            "themeColor": "#0b141a",
+            "themeColorDark": "#0b141a",
+            "navigationColor": "#0b141a",
+            "navigationColorDark": "#0b141a",
+            "navigationDividerColor": "#0b141a",
+            "navigationDividerColorDark": "#0b141a",
+            "backgroundColor": "#0b141a",
+            "enableNotifications": true,
+            "startUrl": "/chat",
+            "iconUrl": "https://$HOST/icon-512.png",
+            "maskableIconUrl": "https://$HOST/icon-maskable-512.png",
+            "splashScreenFadeOutDuration": 300,
+            "signingKey": { "path": "./android.keystore", "alias": "conversation" },
+            "appVersionName": "1.0.$VCODE",
+            "appVersionCode": $VCODE,
+            "shortcuts": [],
+            "generatorApp": "github-actions",
+            "webManifestUrl": "https://$HOST/manifest.webmanifest",
+            "fallbackType": "customtabs",
+            "features": {},
+            "alphaDependencies": { "enabled": false },
+            "enableSiteSettingsShortcut": true,
+            "isChromeOSOnly": false,
+            "isMetaQuest": false,
+            "fullScopeUrl": "https://$HOST/",
+            "minSdkVersion": 23,
+            "orientation": "portrait"
+          }
+          JSON
+          cat twa/twa-manifest.json
+
+      - name: Generate the Android project
+        working-directory: twa
+        run: npx --yes @bubblewrap/cli@latest update --skipVersionUpgrade
+
+      - name: Build and sign
+        working-directory: twa
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ steps.keystore.outputs.password }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ steps.keystore.outputs.password }}
+        run: npx --yes @bubblewrap/cli@latest build --skipPwaValidation
+
+      - name: Read the signing fingerprint
+        id: fp
+        working-directory: twa
+        env:
+          PW: ${{ steps.keystore.outputs.password }}
+        run: |
+          FP=$(keytool -list -v -keystore android.keystore -alias conversation -storepass "$PW" \
+               | grep -i 'SHA256:' | head -1 | sed 's/.*SHA256: *//' | tr -d ' \r')
+          echo "Fingerprint: $FP"
+          echo "sha256=$FP" >> "$GITHUB_OUTPUT"
+
+      # Closes the loop: the site can now vouch for this exact APK, which is
+      # what removes the address bar from the top of the app.
+      - name: Commit assetlinks for this build
+        env:
+          PKG: ${{ inputs.package_id }}
+          FP: ${{ steps.fp.outputs.sha256 }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const file = "src/lib/android.json";
+            const cur = JSON.parse(fs.readFileSync(file, "utf8"));
+            const fp = process.env.FP;
+            const next = {
+              packageName: process.env.PKG,
+              fingerprints: [...new Set([...(cur.fingerprints || []), fp])].filter(Boolean),
+            };
+            fs.writeFileSync(file, JSON.stringify(next, null, 2) + "\n");
+            console.log(next);
+          '
+          if ! git diff --quiet src/lib/android.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add src/lib/android.json
+            git commit -m "Trust the APK signing key for Digital Asset Links"
+            git push
+          else
+            echo "assetlinks already up to date"
+          fi
+
+      - name: Collect the outputs
+        run: |
+          mkdir -p out
+          find twa -name "*.apk" -o -name "*.aab" | while read -r f; do cp "$f" out/; done
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conversation-apk
+          path: out/*
+          retention-days: 30
+
+      - name: Upload the signing key (first build only)
+        if: steps.keystore.outputs.fresh == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-key-KEEP-THIS
+          path: twa/android.keystore
+          retention-days: 90
+
+      - name: Summary
+        env:
+          FP: ${{ steps.fp.outputs.sha256 }}
+          PW: ${{ steps.keystore.outputs.password }}
+          FRESH: ${{ steps.keystore.outputs.fresh }}
+        run: |
+          {
+            echo "## APK ready"
+            echo ""
+            echo "Download it from the **conversation-apk** artifact below."
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Package | \`${{ inputs.package_id }}\` |"
+            echo "| Version | \`${{ inputs.version_code }}\` |"
+            echo "| SHA-256 | \`$FP\` |"
+            if [ "$FRESH" = "true" ]; then
+              echo ""
+              echo "### Keep the signing key"
+              echo "A new key was created for this build. Download **signing-key-KEEP-THIS**, then add these repository secrets so future updates can install over this one:"
+              echo ""
+              echo '- `ANDROID_KEYSTORE_BASE64` — the keystore file, base64 encoded'
+              echo "- \`ANDROID_KEYSTORE_PASSWORD\` — \`$PW\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
