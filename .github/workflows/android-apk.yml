@@ -65,6 +65,19 @@ jobs:
           echo "Using $SDK"
           ls "$SDK"
 
+          # Bubblewrap decides whether an SDK path is real by looking for
+          # tools/source.properties — a file from the SDK layout Google
+          # retired years ago. That is the only reason setup-android was
+          # reaching for the "tools" package at all. Everything Bubblewrap
+          # actually uses lives in cmdline-tools and build-tools, so a
+          # marker file is enough to satisfy the check.
+          if [ ! -f "$SDK/tools/source.properties" ]; then
+            sudo mkdir -p "$SDK/tools"
+            printf 'Pkg.Revision=26.1.1\nPkg.Path=tools\n' \
+              | sudo tee "$SDK/tools/source.properties" > /dev/null
+            echo "Wrote the marker Bubblewrap looks for"
+          fi
+
       - name: Point Bubblewrap at the runner's JDK and SDK
         run: |
           mkdir -p ~/.bubblewrap
