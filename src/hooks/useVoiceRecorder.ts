@@ -82,7 +82,7 @@ export function useVoiceRecorder() {
         setLevels((prev) => [...prev.slice(-49), level]);
       }, 100);
     } catch (err) {
-      console.warn("[voice] visualizer বাদ দেওয়া হলো", err);
+      console.warn("[voice] visualizer skipped", err);
     }
   }, []);
 
@@ -119,7 +119,7 @@ export function useVoiceRecorder() {
       };
       rec.onerror = (e) => {
         console.error("[voice] recorder error", e);
-        setError("রেকর্ডিং এ সমস্যা হয়েছে");
+        setError("Recording failed");
         cleanup();
         setRecording(false);
       };

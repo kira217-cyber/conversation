@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Conversation",
-  description: "আমাদের নিজস্ব জায়গা 💜",
+  description: "A place that is just ours 💜",
   robots: { index: false, follow: false, nocache: true },
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Conversation" },

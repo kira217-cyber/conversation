@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       getConversationId(),
       getPartner(auth.user.id),
     ]);
-    if (!partner) return fail(400, "সঙ্গীর অ্যাকাউন্ট পাওয়া যায়নি", "NO_PARTNER");
+    if (!partner) return fail(400, "Could not find your partner’s account", "NO_PARTNER");
 
     // আগের ঝুলে থাকা কল বন্ধ করে দাও, নাহলে দুটো কল একসাথে বাজবে
     await prisma.call.updateMany({

@@ -6,8 +6,8 @@ import { checkSupport, getMediaStream, mediaErrorMessage, stopStream } from "@/l
 type Row = { label: string; ok: boolean | null; note?: string };
 
 /**
- * /diagnostics — মাইক বা কল কাজ না করলে এখানে এসে দেখলে
- * ঠিক কোন ধাপে আটকাচ্ছে সেটা বোঝা যায়।
+ * /diagnostics — when the mic or a call will not work, this page shows
+ * exactly which step fails on the device that is actually failing.
  */
 export default function Diagnostics() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -18,11 +18,19 @@ export default function Diagnostics() {
   useEffect(() => {
     const s = checkSupport();
     setRows([
-      { label: "HTTPS / secure context", ok: s.secure, note: s.secure ? "" : "http:// দিয়ে খুলেছ — মাইক কাজ করবে না" },
-      { label: "getUserMedia (মাইক নেওয়া)", ok: s.getUserMedia },
-      { label: "MediaRecorder (ভয়েস নোট)", ok: s.mediaRecorder },
-      { label: "RTCPeerConnection (কল)", ok: s.webrtc },
-      { label: "AudioContext (waveform)", ok: s.audioContext, note: s.audioContext ? "" : "waveform ছাড়াই রেকর্ড হবে" },
+      {
+        label: "HTTPS / secure context",
+        ok: s.secure,
+        note: s.secure ? "" : "Opened over http:// — the microphone will not work",
+      },
+      { label: "getUserMedia (microphone access)", ok: s.getUserMedia },
+      { label: "MediaRecorder (voice notes)", ok: s.mediaRecorder },
+      { label: "RTCPeerConnection (calls)", ok: s.webrtc },
+      {
+        label: "AudioContext (waveform)",
+        ok: s.audioContext,
+        note: s.audioContext ? "" : "Recording still works, just without the waveform",
+      },
     ]);
   }, []);
 
@@ -33,14 +41,14 @@ export default function Diagnostics() {
       const stream = await getMediaStream(video);
       const a = stream.getAudioTracks()[0];
       const v = stream.getVideoTracks()[0];
-      out.push({ label: "অনুমতি পাওয়া গেছে", ok: true });
-      if (a) out.push({ label: "অডিও ট্র্যাক", ok: true, note: a.label || "নাম নেই" });
-      if (video) out.push({ label: "ভিডিও ট্র্যাক", ok: !!v, note: v?.label ?? "পাওয়া যায়নি" });
+      out.push({ label: "Permission granted", ok: true });
+      if (a) out.push({ label: "Audio track", ok: true, note: a.label || "unnamed" });
+      if (video) out.push({ label: "Video track", ok: !!v, note: v?.label ?? "not found" });
       stopStream(stream);
-      out.push({ label: "ট্র্যাক বন্ধ করা হলো", ok: true });
+      out.push({ label: "Tracks released", ok: true });
     } catch (err) {
       out.push({
-        label: "ব্যর্থ",
+        label: "Failed",
         ok: false,
         note: `${err instanceof DOMException ? err.name : "Error"} — ${mediaErrorMessage(err, video)}`,
       });
@@ -55,7 +63,11 @@ export default function Diagnostics() {
     try {
       const res = await fetch("/api/calls/ice");
       if (!res.ok) {
-        out.push({ label: "ICE server আনা", ok: false, note: `HTTP ${res.status} — লগইন করা আছে তো?` });
+        out.push({
+          label: "Fetch ICE servers",
+          ok: false,
+          note: `HTTP ${res.status} — are you signed in?`,
+        });
         setIceRows(out);
         setBusy(null);
         return;
@@ -63,9 +75,13 @@ export default function Diagnostics() {
       const { data } = (await res.json()) as {
         data: { iceServers: RTCIceServer[]; turn: boolean };
       };
-      out.push({ label: "ICE server আনা", ok: true, note: `${data.iceServers.length} টা, TURN: ${data.turn ? "আছে" : "নেই"}` });
+      out.push({
+        label: "Fetch ICE servers",
+        ok: true,
+        note: `${data.iceServers.length} servers, TURN: ${data.turn ? "yes" : "no"}`,
+      });
 
-      // সত্যিকারের candidate জোগাড় হয় কিনা দেখি
+      // Gather real candidates to see what this network allows
       const pc = new RTCPeerConnection({ iceServers: data.iceServers });
       pc.createDataChannel("probe");
       const kinds = new Set<string>();
@@ -84,15 +100,17 @@ export default function Diagnostics() {
       });
       pc.close();
 
-      out.push({ label: "host candidate (একই নেটওয়ার্ক)", ok: kinds.has("host") });
+      out.push({ label: "host candidate (same network)", ok: kinds.has("host") });
       out.push({ label: "srflx candidate (STUN)", ok: kinds.has("srflx") });
       out.push({
         label: "relay candidate (TURN)",
         ok: kinds.has("relay"),
-        note: kinds.has("relay") ? "আলাদা নেটওয়ার্কেও কল হবে" : "TURN relay পাওয়া যায়নি",
+        note: kinds.has("relay")
+          ? "Calls will work across different networks"
+          : "No TURN relay — calls may fail across networks",
       });
     } catch (err) {
-      out.push({ label: "ব্যর্থ", ok: false, note: String(err) });
+      out.push({ label: "Failed", ok: false, note: String(err) });
     }
     setIceRows(out);
     setBusy(null);
@@ -100,37 +118,37 @@ export default function Diagnostics() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg px-5 py-8">
-      <h1 className="text-xl font-semibold text-white">যন্ত্রপাতি পরীক্ষা</h1>
+      <h1 className="text-xl font-semibold text-white">Device check</h1>
       <p className="mt-1 text-xs text-[var(--color-muted)]">
-        ভয়েস বা কল কাজ না করলে এখানে দেখো কোথায় আটকাচ্ছে
+        If voice notes or calls are not working, this shows where it breaks
       </p>
 
-      <Section title="ব্রাউজার কী কী পারে" rows={rows} />
+      <Section title="What this browser supports" rows={rows} />
 
       <div className="mt-6 flex flex-wrap gap-2">
         <Btn onClick={() => testMic(false)} busy={busy === "mic"}>
-          🎤 মাইক পরীক্ষা
+          🎤 Test microphone
         </Btn>
         <Btn onClick={() => testMic(true)} busy={busy === "camera"}>
-          📹 ক্যামেরা পরীক্ষা
+          📹 Test camera
         </Btn>
         <Btn onClick={testIce} busy={busy === "ice"}>
-          📞 কলের নেটওয়ার্ক
+          📞 Test call network
         </Btn>
       </div>
 
-      {micRows.length > 0 && <Section title="মাইক / ক্যামেরা" rows={micRows} />}
-      {iceRows.length > 0 && <Section title="কলের নেটওয়ার্ক" rows={iceRows} />}
+      {micRows.length > 0 && <Section title="Microphone / camera" rows={micRows} />}
+      {iceRows.length > 0 && <Section title="Call network" rows={iceRows} />}
 
       <div className="mt-8 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-xs leading-relaxed text-[var(--color-muted)]">
-        <p className="mb-2 font-semibold text-white">ব্রাউজার (user agent)</p>
+        <p className="mb-2 font-semibold text-white">Browser (user agent)</p>
         <p className="break-all font-mono text-[10px]">
           {typeof navigator !== "undefined" ? navigator.userAgent : ""}
         </p>
       </div>
 
       <a href="/chat" className="mt-6 inline-block text-sm text-[var(--color-accent-soft)]">
-        ← চ্যাটে ফিরে যাও
+        ← Back to chat
       </a>
     </div>
   );
@@ -151,7 +169,9 @@ function Section({ title, rows }: { title: string; rows: Row[] }) {
             <span className="mt-0.5 shrink-0">{r.ok === null ? "…" : r.ok ? "✅" : "❌"}</span>
             <div className="min-w-0 flex-1">
               <p className="text-sm text-white">{r.label}</p>
-              {r.note && <p className="mt-0.5 break-words text-xs text-[var(--color-muted)]">{r.note}</p>}
+              {r.note && (
+                <p className="mt-0.5 break-words text-xs text-[var(--color-muted)]">{r.note}</p>
+              )}
             </div>
           </div>
         ))}
@@ -175,7 +195,7 @@ function Btn({
       disabled={busy}
       className="rounded-xl bg-[var(--color-panel-2)] px-4 py-2.5 text-sm text-white transition active:scale-95 disabled:opacity-50"
     >
-      {busy ? "চলছে..." : children}
+      {busy ? "Running..." : children}
     </button>
   );
 }

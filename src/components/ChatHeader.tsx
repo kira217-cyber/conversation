@@ -21,12 +21,12 @@ export default function ChatHeader(props: {
   const [menu, setMenu] = useState(false);
 
   const status = typing
-    ? "লিখছে..."
+    ? "typing..."
     : online
-      ? "অনলাইন"
+      ? "online"
       : lastSeen
-        ? `শেষ দেখা ${formatLastSeen(lastSeen)}`
-        : "অফলাইন";
+        ? `last seen ${formatLastSeen(lastSeen)}`
+        : "offline";
 
   const initial = partner?.displayName?.trim()?.[0] ?? "💜";
 
@@ -53,12 +53,12 @@ export default function ChatHeader(props: {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h2 className="truncate text-sm font-semibold text-white">
-            {partner?.displayName ?? "আমার মানুষ"}
+            {partner?.displayName ?? "My person"}
           </h2>
           {daysTogether !== null && (
             <span className="hidden items-center gap-1 rounded-full bg-purple-500/15 px-2 py-0.5 text-[10px] font-medium text-[var(--color-accent-soft)] sm:inline-flex">
               <Heart className="h-2.5 w-2.5 fill-current" />
-              {daysTogether} দিন
+              {daysTogether} days
             </span>
           )}
         </div>
@@ -67,7 +67,7 @@ export default function ChatHeader(props: {
             typing ? "text-[var(--color-accent-soft)]" : "text-[var(--color-muted)]"
           }`}
         >
-          {!connected ? "সংযোগ হচ্ছে..." : status}
+          {!connected ? "connecting..." : status}
         </p>
       </div>
 
@@ -76,7 +76,7 @@ export default function ChatHeader(props: {
       <button
         onClick={props.onCall}
         disabled={callActive || !partner}
-        title="ভয়েস কল"
+        title="Voice call"
         className="rounded-full p-2 text-[var(--color-muted)] transition hover:bg-[var(--color-panel-2)] hover:text-white disabled:opacity-40"
       >
         <Phone className="h-5 w-5" />
@@ -84,7 +84,7 @@ export default function ChatHeader(props: {
       <button
         onClick={props.onVideoCall}
         disabled={callActive || !partner}
-        title="ভিডিও কল"
+        title="Video call"
         className="rounded-full p-2 text-[var(--color-muted)] transition hover:bg-[var(--color-panel-2)] hover:text-white disabled:opacity-40"
       >
         <Video className="h-5 w-5" />
@@ -106,7 +106,7 @@ export default function ChatHeader(props: {
                 className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-red-300 hover:bg-white/5"
               >
                 <LogOut className="h-4 w-4" />
-                লগআউট
+                Sign out
               </button>
             </div>
           </>
@@ -119,10 +119,10 @@ export default function ChatHeader(props: {
 function formatLastSeen(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "একটু আগে";
-  if (mins < 60) return `${mins} মিনিট আগে`;
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} ঘণ্টা আগে`;
+  if (hours < 24) return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
   const days = Math.floor(hours / 24);
-  return days === 1 ? "গতকাল" : `${days} দিন আগে`;
+  return days === 1 ? "yesterday" : `${days} days ago`;
 }

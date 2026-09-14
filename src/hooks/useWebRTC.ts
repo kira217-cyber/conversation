@@ -91,7 +91,7 @@ export function useWebRTC(opts: {
       .play()
       .then(() => setNeedsTap(false))
       .catch((err) => {
-        console.warn("[call] autoplay আটকেছে", err);
+        console.warn("[call] autoplay blocked", err);
         setNeedsTap(true);
       });
   }, []);
@@ -109,7 +109,7 @@ export function useWebRTC(opts: {
       const { iceServers, turn } = await api<{ iceServers: RTCIceServer[]; turn: boolean }>(
         "/api/calls/ice",
       );
-      if (!turn) console.warn("[call] TURN নেই — আলাদা নেটওয়ার্কে কল নাও লাগতে পারে");
+      if (!turn) console.warn("[call] no TURN — calls may fail across networks");
 
       const peer = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 4 });
 
@@ -130,7 +130,7 @@ export function useWebRTC(opts: {
         if (s === "connected") {
           setCall((c) => (c ? { ...c, status: "active", startedAt: c.startedAt ?? Date.now() } : c));
         } else if (s === "failed") {
-          setError("সংযোগ হলো না — নেটওয়ার্ক পাল্টে আবার চেষ্টা করো");
+          setError("Could not connect — try a different network");
         }
       };
 
@@ -189,7 +189,7 @@ export function useWebRTC(opts: {
         signal("offer", offer);
       } catch (err) {
         console.error("[call] start failed", err);
-        setError("কল শুরু করা গেল না");
+        setError("Could not start the call");
         teardown();
       }
     },
@@ -237,7 +237,7 @@ export function useWebRTC(opts: {
       await api(`/api/calls/${call.callId}`, { method: "PATCH", json: { action: "accept" } });
     } catch (err) {
       console.error("[call] accept failed", err);
-      setError("কল ধরা গেল না");
+      setError("Could not answer the call");
       teardown();
     }
   }, [call, buildPeer, drainIce, signal, teardown]);

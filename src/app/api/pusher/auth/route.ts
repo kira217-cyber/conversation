@@ -21,14 +21,14 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const socketId = String(form.get("socket_id") ?? "");
     const channel = String(form.get("channel_name") ?? "");
-    if (!socketId || !channel) return fail(400, "socket_id/channel_name নেই", "BAD_REQUEST");
+    if (!socketId || !channel) return fail(400, "Missing socket_id or channel_name", "BAD_REQUEST");
 
     const conversationId = await getConversationId();
     const allowedUser = CH.user(auth.user.id);
     const allowedConvo = CH.convo(conversationId);
 
     if (channel !== allowedUser && channel !== allowedConvo) {
-      return fail(403, "এই চ্যানেলে ঢোকার অনুমতি নেই", "CHANNEL_FORBIDDEN");
+      return fail(403, "Not allowed on this channel", "CHANNEL_FORBIDDEN");
     }
 
     const pusher = pusherServer();

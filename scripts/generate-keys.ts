@@ -8,12 +8,12 @@ const jwt = crypto.randomBytes(48).toString("base64url");
 const msgKey = crypto.randomBytes(32).toString("base64");
 
 console.log(`
-নিচের দুই লাইন .env.local এ কপি করুন:
+Copy these two lines into .env.local:
 ──────────────────────────────────────────────
 JWT_SECRET="${jwt}"
 MESSAGE_ENCRYPTION_KEY="${msgKey}"
 ──────────────────────────────────────────────
 
-⚠️  MESSAGE_ENCRYPTION_KEY একবার সেট করার পর আর বদলাবেন না।
-    বদলালে আগের সব মেসেজ আর পড়া যাবে না।
+⚠️  Never change MESSAGE_ENCRYPTION_KEY once it is set.
+    Changing it makes every existing message unreadable.
 `);

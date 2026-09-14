@@ -80,7 +80,7 @@ const sendSchema = z
     socketId: z.string().optional(),
   })
   .refine((v) => (v.type === "TEXT" ? !!v.body?.trim() : !!v.media), {
-    message: "খালি মেসেজ পাঠানো যাবে না",
+    message: "Message cannot be empty",
   });
 
 export async function POST(req: NextRequest) {
@@ -127,13 +127,13 @@ export async function POST(req: NextRequest) {
           if (existing) {
             return ok(
               { message: toDTO(existing, auth.user.id), duplicate: true },
-              "আগেই পাঠানো হয়েছে",
+              "Already sent",
             );
           }
         }
         // replyToId এমন মেসেজের দিকে দেখাচ্ছে যেটা নেই
         if (err.code === "P2003") {
-          return fail(400, "যে মেসেজের উত্তর দিচ্ছ সেটি আর নেই", "REPLY_NOT_FOUND");
+          return fail(400, "The message you replied to no longer exists", "REPLY_NOT_FOUND");
         }
       }
       throw err;
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     // socketId দেওয়ায় পাঠানোর ট্যাবে নিজের মেসেজ দ্বিতীয়বার আসবে না
     await emit(CH.convo(conversationId), EV.messageNew, dto, input.socketId);
 
-    return ok({ message: dto, duplicate: false }, "পাঠানো হয়েছে");
+    return ok({ message: dto, duplicate: false }, "Sent");
   } catch (err) {
     return handleError(err);
   }

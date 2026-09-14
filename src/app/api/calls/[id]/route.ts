@@ -23,10 +23,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const conversationId = await getConversationId();
     const call = await prisma.call.findFirst({ where: { id, conversationId: conversationId } });
-    if (!call) return fail(404, "কলটি নেই", "NOT_FOUND");
+    if (!call) return fail(404, "Call not found", "NOT_FOUND");
 
     const partner = await getPartner(auth.user.id);
-    if (!partner) return fail(400, "সঙ্গী নেই", "NO_PARTNER");
+    if (!partner) return fail(400, "No partner found", "NO_PARTNER");
 
     const now = new Date();
 

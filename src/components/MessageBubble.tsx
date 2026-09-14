@@ -25,7 +25,7 @@ export default function MessageBubble({
   const [menu, setMenu] = useState(false);
   const [lightbox, setLightbox] = useState(false);
 
-  const time = new Date(message.createdAt).toLocaleTimeString("bn-BD", {
+  const time = new Date(message.createdAt).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -47,14 +47,14 @@ export default function MessageBubble({
             >
               <button
                 onClick={() => onReply(message)}
-                title="উত্তর দাও"
+                title="Reply"
                 className="rounded-full bg-[var(--color-panel-2)] p-1.5 text-[var(--color-muted)] shadow hover:text-white"
               >
                 <Reply className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setMenu(true)}
-                title="আরও"
+                title="More"
                 className="rounded-full bg-[var(--color-panel-2)] p-1.5 text-[var(--color-muted)] shadow hover:text-white"
               >
                 <span className="block h-3.5 w-3.5 text-center text-[13px] leading-[14px]">😊</span>
@@ -80,7 +80,7 @@ export default function MessageBubble({
                 }`}
               >
                 <p className="truncate text-[var(--color-accent-soft)]">
-                  {message.replyTo.preview || "মেসেজ"}
+                  {message.replyTo.preview || "Message"}
                 </p>
               </div>
             )}
@@ -88,14 +88,14 @@ export default function MessageBubble({
             {message.deletedForAll ? (
               <p className="flex items-center gap-1.5 py-0.5 text-sm italic text-white/45">
                 <X className="h-3.5 w-3.5" />
-                এই মেসেজটি মুছে ফেলা হয়েছে
+                This message was deleted
               </p>
             ) : message.type === "IMAGE" && message.media ? (
               <button onClick={() => setLightbox(true)} className="block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={message.media.url}
-                  alt="ছবি"
+                  alt="Photo"
                   className="max-h-80 w-full rounded-lg object-cover"
                   style={{ maxWidth: 280 }}
                 />
@@ -170,7 +170,7 @@ export default function MessageBubble({
               }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-white hover:bg-white/5"
             >
-              <Reply className="h-4 w-4" /> উত্তর দাও
+              <Reply className="h-4 w-4" /> Reply
             </button>
 
             {message.body && (
@@ -181,7 +181,7 @@ export default function MessageBubble({
                 }}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-white hover:bg-white/5"
               >
-                <Check className="h-4 w-4" /> কপি করো
+                <Check className="h-4 w-4" /> Copy
               </button>
             )}
 
@@ -192,7 +192,7 @@ export default function MessageBubble({
               }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-white hover:bg-white/5"
             >
-              <Trash2 className="h-4 w-4" /> আমার কাছ থেকে মুছে ফেলো
+              <Trash2 className="h-4 w-4" /> Delete for me
             </button>
 
             {mine && (
@@ -203,7 +203,7 @@ export default function MessageBubble({
                 }}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-300 hover:bg-white/5"
               >
-                <Trash2 className="h-4 w-4" /> দুজনের কাছ থেকেই মুছে ফেলো
+                <Trash2 className="h-4 w-4" /> Delete for everyone
               </button>
             )}
           </div>
@@ -222,7 +222,7 @@ export default function MessageBubble({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={message.media.url}
-            alt="ছবি"
+            alt="Photo"
             className="max-h-full max-w-full rounded-lg object-contain"
           />
         </div>

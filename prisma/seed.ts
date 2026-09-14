@@ -11,7 +11,7 @@ const prisma = new PrismaClient();
 function required(name: string) {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`❌ .env.local এ ${name} সেট করা নেই`);
+    throw new Error(`❌ ${name} is not set in .env.local`);
   }
   return value;
 }
@@ -69,7 +69,7 @@ async function main() {
       where: { id: existing.id },
       data: { anniversary: anniversary ? new Date(anniversary) : existing.anniversary },
     });
-    console.log(`  ✓ conversation (আগেরটাই আছে)`);
+    console.log(`  ✓ conversation (kept existing)`);
   } else {
     await prisma.conversation.create({
       data: {
@@ -77,10 +77,10 @@ async function main() {
         anniversary: anniversary ? new Date(anniversary) : null,
       },
     });
-    console.log(`  ✓ conversation তৈরি হয়েছে`);
+    console.log(`  ✓ conversation created`);
   }
 
-  console.log("\n✅ হয়ে গেছে। এখন `npm run dev` চালিয়ে লগইন করুন।\n");
+  console.log("\n✅ Done. Run `npm run dev` and sign in.\n");
 }
 
 main()

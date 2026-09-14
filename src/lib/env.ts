@@ -8,11 +8,11 @@ const serverSchema = z.object({
   DATABASE_URL: z.string().min(1),
   DIRECT_URL: z.string().min(1).optional(),
 
-  JWT_SECRET: z.string().min(32, "JWT_SECRET কমপক্ষে ৩২ অক্ষরের হতে হবে"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   MESSAGE_ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, "base64").length === 32, {
-      message: "MESSAGE_ENCRYPTION_KEY ঠিক ৩২ বাইট base64 হতে হবে (openssl rand -base64 32)",
+      message: "MESSAGE_ENCRYPTION_KEY must decode to exactly 32 bytes (openssl rand -base64 32)",
     }),
 
   PUSHER_APP_ID: z.string().min(1),
@@ -44,7 +44,7 @@ export function env() {
     const issues = parsed.error.issues
       .map((i) => `  • ${i.path.join(".")}: ${i.message}`)
       .join("\n");
-    throw new Error(`❌ Environment variable সমস্যা:\n${issues}\n\n.env.local ফাইলটা দেখুন।`);
+    throw new Error(`❌ Environment variable problem:\n${issues}\n\nCheck your .env.local file.`);
   }
 
   cached = parsed.data;

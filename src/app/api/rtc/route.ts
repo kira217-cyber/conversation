@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return zodFail(parsed.error);
 
     const partner = await getPartner(auth.user.id);
-    if (!partner) return fail(400, "সঙ্গী নেই", "NO_PARTNER");
+    if (!partner) return fail(400, "No partner found", "NO_PARTNER");
 
     const event =
       parsed.data.kind === "offer" ? EV.rtcOffer

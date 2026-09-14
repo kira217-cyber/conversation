@@ -54,7 +54,7 @@ const MessageList = forwardRef<HTMLDivElement, Props>(function MessageList(props
 
           {!hasMore && messages.length > 0 && (
             <p className="mb-4 text-center text-[11px] text-[#5a6b74]">
-              💜 এখান থেকেই আমাদের শুরু
+              💜 This is where we began
             </p>
           )}
 
@@ -62,9 +62,9 @@ const MessageList = forwardRef<HTMLDivElement, Props>(function MessageList(props
             <div className="flex h-full min-h-[50vh] flex-col items-center justify-center text-center">
               <div className="mb-3 text-4xl">💜</div>
               <p className="text-sm text-[var(--color-muted)]">
-                এখনো কোনো কথা হয়নি।
+                No messages yet.
                 <br />
-                প্রথম মেসেজটা তুমিই লেখো।
+                Write the first one.
               </p>
             </div>
           )}
@@ -119,10 +119,10 @@ function formatDay(dateString: string) {
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
 
-  if (d.toDateString() === today.toDateString()) return "আজ";
-  if (d.toDateString() === yesterday.toDateString()) return "গতকাল";
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
 
-  return d.toLocaleDateString("bn-BD", { day: "numeric", month: "long", year: "numeric" });
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
 export default MessageList;

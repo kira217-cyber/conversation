@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       await audit("LOGOUT", userId, { reason });
     }
 
-    return ok(null, "লগআউট হয়েছে");
+    return ok(null, "Signed out");
   } catch (err) {
     return handleError(err);
   }

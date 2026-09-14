@@ -18,7 +18,7 @@ const schema = z.object({
 });
 
 // লগইন fail হলে সবসময় একই বার্তা — কোন ইমেইলটা আছে সেটা যেন বোঝা না যায়
-const GENERIC = "ইমেইল বা পাসওয়ার্ড ঠিক নেই";
+const GENERIC = "Email or password is incorrect";
 
 // user না পেলেও একটা dummy hash যাচাই করি, যাতে response time দেখে
 // ইমেইল আছে কিনা আন্দাজ করা না যায় (timing attack)
@@ -41,12 +41,12 @@ export async function POST(req: NextRequest) {
 
     if (!user.isActive) {
       await audit("LOGIN_BLOCKED", user.id, { reason: "INACTIVE" });
-      return fail(403, "এই অ্যাকাউন্টটি বন্ধ করা আছে", "ACCOUNT_DISABLED");
+      return fail(403, "This account is disabled", "ACCOUNT_DISABLED");
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
-      return fail(429, `অনেকবার ভুল হয়েছে — ${mins} মিনিট পর আবার চেষ্টা করো`, "ACCOUNT_LOCKED");
+      return fail(429, `Too many attempts — try again in ${mins} minute(s)`, "ACCOUNT_LOCKED");
     }
 
     const valid = await compare(password, user.passwordHash);
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       });
       await audit("LOGIN_FAILED", user.id, { attempts, locked: shouldLock });
       return shouldLock
-        ? fail(429, `অনেকবার ভুল হয়েছে — ${e.LOCKOUT_MINUTES} মিনিট পর আবার চেষ্টা করো`, "ACCOUNT_LOCKED")
+        ? fail(429, `Too many attempts — try again in ${e.LOCKOUT_MINUTES} minutes`, "ACCOUNT_LOCKED")
         : fail(401, GENERIC, "AUTH_INVALID");
     }
 
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
         sessionId: session.id,
         idleTimeoutMinutes: e.IDLE_TIMEOUT_MINUTES,
       },
-      "স্বাগতম 💜",
+      "Welcome 💜",
     );
   } catch (err) {
     return handleError(err);

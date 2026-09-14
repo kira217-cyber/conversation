@@ -55,13 +55,13 @@ export default function CallOverlay({
     error ??
     (call.status === "ringing"
       ? incoming
-        ? `${call.video ? "ভিডিও" : "ভয়েস"} কল আসছে...`
-        : "রিং হচ্ছে..."
+        ? `Incoming ${call.video ? "video" : "voice"} call...`
+        : "Ringing..."
       : call.status === "connecting"
-        ? "সংযোগ হচ্ছে..."
+        ? "Connecting..."
         : call.status === "active"
           ? fmt(seconds)
-          : "কল শেষ");
+          : "Call ended");
 
   const initial = call.peer?.displayName?.trim()?.[0] ?? "💜";
 
@@ -109,7 +109,7 @@ export default function CallOverlay({
             )}
 
             <h2 className="text-2xl font-semibold text-white">
-              {call.peer?.displayName ?? "আমার মানুষ"}
+              {call.peer?.displayName ?? "My person"}
             </h2>
           </>
         )}
@@ -129,7 +129,7 @@ export default function CallOverlay({
             className="mt-4 flex items-center gap-2 rounded-full bg-white/15 px-5 py-2.5 text-sm font-medium text-white backdrop-blur transition active:scale-95"
           >
             <Volume2 className="h-4 w-4" />
-            শোনার জন্য এখানে চাপো
+            Tap here to listen
           </button>
         )}
       </div>

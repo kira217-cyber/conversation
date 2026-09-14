@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * মাইক/ক্যামেরা নেওয়ার একটাই জায়গা — ভয়েস নোট আর কল দুটোই এটা ব্যবহার করে।
- * ব্রাউজারভেদে যা যা আলাদা, সব এখানে সামলানো।
+ * One place for microphone/camera access — voice notes and calls both use it.
+ * Every browser quirk is handled here, not at the call sites.
  */
 
-/** Safari-তে AudioContext এর নাম আলাদা */
+/** Safari exposes it under a prefix */
 export function makeAudioContext(): AudioContext | null {
   const Ctor =
     (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ??
@@ -28,7 +28,7 @@ export type MediaSupport = {
 
 export function checkSupport(): MediaSupport {
   return {
-    // HTTPS বা localhost ছাড়া ব্রাউজার মাইক দেয় না
+    // Browsers refuse microphone access outside HTTPS / localhost
     secure: typeof window !== "undefined" && window.isSecureContext,
     getUserMedia: typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia,
     mediaRecorder: typeof MediaRecorder !== "undefined",
@@ -40,39 +40,39 @@ export function checkSupport(): MediaSupport {
   };
 }
 
-/** ব্যর্থতার আসল কারণটা বাংলায় বলে — "কাজ করছে না" এর বদলে */
+/** Says what actually went wrong, instead of a single "it didn't work" */
 export function mediaErrorMessage(err: unknown, wantsVideo = false): string {
-  const device = wantsVideo ? "ক্যামেরা বা মাইক্রোফোন" : "মাইক্রোফোন";
+  const device = wantsVideo ? "Camera or microphone" : "Microphone";
   const name = err instanceof DOMException ? err.name : (err as Error)?.message;
 
   switch (name) {
     case "NotAllowedError":
     case "PermissionDeniedError":
-      return `${device} এর অনুমতি দাওনি। ঠিকানার পাশে 🔒 আইকনে চেপে Allow করো, তারপর পেজটা রিফ্রেশ করো।`;
+      return `${device} access was blocked. Tap the 🔒 icon next to the address bar, allow it, then reload.`;
     case "NotFoundError":
     case "DevicesNotFoundError":
-      return `এই ডিভাইসে কোনো ${device} পাওয়া যায়নি।`;
+      return `No ${device.toLowerCase()} found on this device.`;
     case "NotReadableError":
     case "TrackStartError":
-      return `${device} অন্য কোনো অ্যাপ দখল করে আছে। সেটা বন্ধ করে আবার চেষ্টা করো।`;
+      return `${device} is being used by another app. Close it and try again.`;
     case "OverconstrainedError":
-      return `${device} চাওয়া সেটিংসে চলে না।`;
+      return `${device} does not support the requested settings.`;
     case "SecurityError":
-      return "নিরাপত্তার কারণে ব্লক হয়েছে — HTTPS লিংক দিয়ে খোলো।";
+      return "Blocked for security reasons — open the site over HTTPS.";
     case "INSECURE_CONTEXT":
-      return "মাইক্রোফোন শুধু HTTPS এ কাজ করে। https:// দিয়ে শুরু হওয়া লিংকটা ব্যবহার করো।";
+      return "The microphone only works over HTTPS. Use the https:// link.";
     case "NO_GET_USER_MEDIA":
-      return "এই ব্রাউজারে মাইক্রোফোন সাপোর্ট নেই। Chrome বা Safari এর নতুন ভার্সন ব্যবহার করো।";
+      return "This browser cannot access the microphone. Try a recent Chrome or Safari.";
     case "NO_MEDIA_RECORDER":
-      return "এই ব্রাউজারে ভয়েস রেকর্ডিং সাপোর্ট নেই।";
+      return "This browser cannot record audio.";
     default:
-      return `${device} চালু করা গেল না${name ? ` (${name})` : ""}।`;
+      return `${device} could not be started${name ? ` (${name})` : ""}.`;
   }
 }
 
 /**
- * ⚠️ এটা user gesture এর সাথে সাথেই ডাকতে হবে — আগে কোনো await নয়।
- * iOS Safari মাঝে নেটওয়ার্ক কল থাকলে অনুমতির প্রম্পট বাতিল করে দেয়।
+ * ⚠️ Call this immediately on the user gesture — no awaits before it.
+ * iOS Safari dismisses the permission prompt if a network call comes first.
  */
 export async function getMediaStream(wantsVideo = false): Promise<MediaStream> {
   if (typeof window !== "undefined" && !window.isSecureContext) {

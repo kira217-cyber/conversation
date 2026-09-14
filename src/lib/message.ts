@@ -64,9 +64,9 @@ export function toDTO(msg: WithReply, viewerId: string): MessageDTO | null {
             type: msg.replyTo.type,
             preview:
               msg.replyTo.type === "IMAGE"
-                ? "📷 ছবি"
+                ? "📷 Photo"
                 : msg.replyTo.type === "VOICE"
-                  ? "🎤 ভয়েস মেসেজ"
+                  ? "🎤 Voice message"
                   : open(msg.replyTo).slice(0, 90),
           }
         : null,

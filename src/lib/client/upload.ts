@@ -56,12 +56,12 @@ export async function uploadFile(
       try {
         const body = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300) resolve(body);
-        else reject(new Error(body?.error?.message ?? "আপলোড ব্যর্থ"));
+        else reject(new Error(body?.error?.message ?? "Upload failed"));
       } catch {
-        reject(new Error("আপলোডের উত্তর বোঝা গেল না"));
+        reject(new Error("Could not read the upload response"));
       }
     };
-    xhr.onerror = () => reject(new Error("নেটওয়ার্ক সমস্যা — আপলোড হয়নি"));
+    xhr.onerror = () => reject(new Error("Network problem — upload did not finish"));
     xhr.send(form);
   });
 

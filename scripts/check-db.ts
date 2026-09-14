@@ -11,8 +11,8 @@ async function main() {
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public' ORDER BY table_name`;
 
-  console.log("\n✅ ডেটাবেস সংযোগ ঠিক আছে\n");
-  console.log("টেবিল:");
+  console.log("\n✅ Database connection is fine\n");
+  console.log("Tables:");
   for (const t of tables) console.log("   •", t.table_name);
 
   const [users, messages, convos] = await Promise.all([
@@ -21,14 +21,14 @@ async function main() {
     prisma.conversation.count(),
   ]);
 
-  console.log(`\nUser: ${users}   Conversation: ${convos}   Message: ${messages}`);
-  if (users === 0) console.log("\n👉 এখন `npm run db:seed` চালান — অ্যাকাউন্ট তৈরি হবে।");
+  console.log(`\nUsers: ${users}   Conversations: ${convos}   Messages: ${messages}`);
+  if (users === 0) console.log("\n👉 Run `npm run db:seed` next to create the accounts.");
   console.log("");
 
   await prisma.$disconnect();
 }
 
 main().catch((err) => {
-  console.error("\n❌ ডেটাবেসে পৌঁছানো গেল না:\n", err instanceof Error ? err.message : err, "\n");
+  console.error("\n❌ Could not reach the database:\n", err instanceof Error ? err.message : err, "\n");
   process.exit(1);
 });

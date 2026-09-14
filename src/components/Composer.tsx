@@ -67,18 +67,18 @@ export default function Composer({
     async (file: File) => {
       setError(null);
       if (!file.type.startsWith("image/")) {
-        setError("শুধু ছবি পাঠানো যাবে");
+        setError("Only images can be sent");
         return;
       }
       if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
-        setError(`ছবিটা ${MAX_IMAGE_MB}MB এর বেশি বড়`);
+        setError(`The image is larger than ${MAX_IMAGE_MB}MB`);
         return;
       }
 
-      setUploading({ percent: 0, kind: "ছবি" });
+      setUploading({ percent: 0, kind: "photo" });
       try {
         const up = await uploadFile(file, "image", file.name, (p) =>
-          setUploading({ percent: p, kind: "ছবি" }),
+          setUploading({ percent: p, kind: "photo" }),
         );
         await onSend({
           type: "IMAGE",
@@ -94,7 +94,7 @@ export default function Composer({
         });
         setText("");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "ছবি পাঠানো গেল না");
+        setError(err instanceof Error ? err.message : "Could not send the photo");
       } finally {
         setUploading(null);
       }
@@ -106,11 +106,11 @@ export default function Composer({
     const rec = await voice.finish();
     if (!rec) return;
 
-    setUploading({ percent: 0, kind: "ভয়েস" });
+    setUploading({ percent: 0, kind: "voice message" });
     try {
       const ext = rec.mime.includes("mp4") ? "m4a" : "webm";
       const up = await uploadFile(rec.blob, "voice", `voice-${Date.now()}.${ext}`, (p) =>
-        setUploading({ percent: p, kind: "ভয়েস" }),
+        setUploading({ percent: p, kind: "voice message" }),
       );
       await onSend({
         type: "VOICE",
@@ -123,7 +123,7 @@ export default function Composer({
         },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ভয়েস পাঠানো গেল না");
+      setError(err instanceof Error ? err.message : "Could not send the voice message");
     } finally {
       setUploading(null);
     }
@@ -151,13 +151,13 @@ export default function Composer({
         <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-3 py-2">
           <div className="min-w-0 flex-1 border-l-[3px] border-[var(--color-accent)] pl-2">
             <p className="text-[11px] font-medium text-[var(--color-accent-soft)]">
-              {replyTo.senderId === meId ? "তুমি" : "সে"}
+              {replyTo.senderId === meId ? "You" : "Them"}
             </p>
             <p className="truncate text-xs text-[var(--color-muted)]">
               {replyTo.type === "IMAGE"
-                ? "📷 ছবি"
+                ? "📷 Photo"
                 : replyTo.type === "VOICE"
-                  ? "🎤 ভয়েস মেসেজ"
+                  ? "🎤 Voice message"
                   : replyTo.body}
             </p>
           </div>
@@ -185,7 +185,7 @@ export default function Composer({
       {uploading && (
         <div className="border-b border-[var(--color-line)] px-4 py-2">
           <div className="mb-1 flex justify-between text-[11px] text-[var(--color-muted)]">
-            <span>{uploading.kind} পাঠানো হচ্ছে...</span>
+            <span>Sending {uploading.kind}...</span>
             <span>{uploading.percent}%</span>
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-[var(--color-line)]">
@@ -220,7 +220,7 @@ export default function Composer({
           <button
             onClick={() => void voice.cancel()}
             className="rounded-full p-2 text-red-400 transition hover:bg-red-500/10"
-            title="বাতিল"
+            title="Cancel"
           >
             <Trash2 className="h-5 w-5" />
           </button>
@@ -244,7 +244,7 @@ export default function Composer({
           <button
             onClick={() => void sendVoice()}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-pink-600 text-white"
-            title="পাঠাও"
+            title="Send"
           >
             <Send className="h-4 w-4" />
           </button>
@@ -283,7 +283,7 @@ export default function Composer({
             ref={textarea}
             rows={1}
             value={text}
-            placeholder="কিছু লেখো..."
+            placeholder="Type a message..."
             onChange={(e) => {
               setText(e.target.value);
               if (e.target.value) onTyping();
@@ -310,7 +310,7 @@ export default function Composer({
             <button
               onClick={() => void voice.start()}
               disabled={!!uploading}
-              title="ভয়েস মেসেজ"
+              title="Voice message"
               className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-[var(--color-panel-2)] text-[var(--color-muted)] transition hover:text-white active:scale-95 disabled:opacity-40"
             >
               {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mic className="h-5 w-5" />}

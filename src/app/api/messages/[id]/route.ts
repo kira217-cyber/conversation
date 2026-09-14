@@ -26,11 +26,11 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const msg = await prisma.message.findFirst({
       where: { id, conversationId: conversationId },
     });
-    if (!msg) return fail(404, "মেসেজটি নেই", "NOT_FOUND");
+    if (!msg) return fail(404, "Message not found", "NOT_FOUND");
 
     if (scope === "all") {
       if (msg.senderId !== auth.user.id)
-        return fail(403, "অন্যের মেসেজ সবার জন্য মোছা যাবে না", "FORBIDDEN");
+        return fail(403, "You can only delete your own messages for everyone", "FORBIDDEN");
 
       if (msg.mediaPublicId) {
         await destroyAsset(msg.mediaPublicId, msg.type === "IMAGE" ? "image" : "voice");
@@ -51,14 +51,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       });
 
       await emit(CH.convo(conversationId), EV.messageDeleted, { id, scope: "all" });
-      return ok({ id, scope: "all" }, "সবার জন্য মুছে ফেলা হয়েছে");
+      return ok({ id, scope: "all" }, "Deleted for everyone");
     }
 
     await prisma.message.update({
       where: { id },
       data: { deletedForIds: { push: auth.user.id } },
     });
-    return ok({ id, scope: "me" }, "তোমার জন্য মুছে ফেলা হয়েছে");
+    return ok({ id, scope: "me" }, "Deleted for you");
   } catch (err) {
     return handleError(err);
   }
@@ -82,7 +82,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const msg = await prisma.message.findFirst({
       where: { id, conversationId: conversationId, deletedForAll: false },
     });
-    if (!msg) return fail(404, "মেসেজটি নেই", "NOT_FOUND");
+    if (!msg) return fail(404, "Message not found", "NOT_FOUND");
 
     // একই ইমোজি আবার দিলে উঠে যাবে (toggle)
     const next = msg.reaction === parsed.data.reaction ? null : parsed.data.reaction;

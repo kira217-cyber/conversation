@@ -19,7 +19,7 @@ async function main() {
 
   // ── ১. সার্ভার signature বানাতে পারে? ──
   const s = signUpload("image");
-  console.log(`✅ signature তৈরি হলো  (cloud: ${s.cloudName}, folder: ${s.folder})`);
+  console.log(`✅ Signature created   (cloud: ${s.cloudName}, folder: ${s.folder})`);
 
   // ── ২. ব্রাউজার যেভাবে পাঠাবে, সেভাবেই আপলোড ──
   const form = new FormData();
@@ -34,37 +34,37 @@ async function main() {
   const body = (await res.json()) as { public_id?: string; error?: { message: string } };
 
   if (!res.ok || !body.public_id) {
-    console.error(`\n❌ আপলোড হয়নি: ${body.error?.message ?? res.status}\n`);
+    console.error(`\n❌ Upload failed: ${body.error?.message ?? res.status}\n`);
     process.exit(1);
   }
   const publicId = body.public_id;
-  console.log(`✅ আপলোড হলো          (${publicId})`);
+  console.log(`✅ Uploaded            (${publicId})`);
 
   // ── ৩. signed URL দিয়ে পড়া যায়? ──
   const url = signedUrl(publicId, "image");
   const signedRes = await fetch(url);
   if (!signedRes.ok) {
-    console.error(`\n❌ signed URL কাজ করছে না (HTTP ${signedRes.status})\n   ${url}\n`);
+    console.error(`\n❌ Signed URL does not work (HTTP ${signedRes.status})\n   ${url}\n`);
     process.exit(1);
   }
-  console.log("✅ signed URL এ ছবি পড়া গেল");
+  console.log("✅ Readable through the signed URL");
 
   // ── ৪. signature ছাড়া কেউ দেখতে পারে না তো? ──
   const naked = `https://res.cloudinary.com/${s.cloudName}/image/authenticated/${publicId}.png`;
   const nakedRes = await fetch(naked);
   if (nakedRes.ok) {
-    console.error("\n⚠️  signature ছাড়াও ছবি খুলছে — ছবি প্রাইভেট নয়!\n");
+    console.error("\n⚠️  The file opens without a signature — media is NOT private!\n");
     process.exit(1);
   }
-  console.log(`✅ signature ছাড়া খোলে না  (HTTP ${nakedRes.status}) — ছবি প্রাইভেট`);
+  console.log(`✅ Blocked without a signature (HTTP ${nakedRes.status}) — media is private`);
 
   // ── ৫. মুছে ফেলা ──
   await destroyAsset(publicId, "image");
-  console.log("✅ টেস্ট ফাইল মুছে ফেলা হলো\n");
-  console.log("🎉 Cloudinary পুরোপুরি ঠিক আছে — ছবি আর ভয়েস নোট দুটোই চলবে\n");
+  console.log("✅ Test file deleted\n");
+  console.log("🎉 Cloudinary is fully working — photos and voice notes will both work\n");
 }
 
 main().catch((err) => {
-  console.error("\n❌ Cloudinary সমস্যা:\n", err instanceof Error ? err.message : err, "\n");
+  console.error("\n❌ Cloudinary problem:\n", err instanceof Error ? err.message : err, "\n");
   process.exit(1);
 });

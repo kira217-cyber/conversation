@@ -12,7 +12,6 @@ import ChatHeader from "./ChatHeader";
 import MessageList from "./MessageList";
 import Composer from "./Composer";
 import CallOverlay from "./CallOverlay";
-import IdleWarning from "./IdleWarning";
 
 export default function ChatApp({ initial }: { initial: SessionInfo }) {
   const me = initial.user;
@@ -43,10 +42,8 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
   const scroller = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<number | null>(null);
 
-  const { secondsLeft, logout } = useSessionGuard({
-    sessionId: initial.session.id,
-    idleMinutes: initial.idleTimeoutMinutes,
-  });
+  // ট্যাব খোলা থাকলে লগইন থাকবে, ট্যাব বন্ধ হলে লগআউট
+  const { logout } = useSessionGuard({ sessionId: initial.session.id });
 
   const onCallEvent = useCallback(() => {
     /* কল শেষ — আপাতত আলাদা কিছু দেখানোর দরকার নেই */
@@ -294,8 +291,8 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
               senderId: replyTo.senderId,
               type: replyTo.type,
               preview:
-                replyTo.type === "IMAGE" ? "📷 ছবি"
-                : replyTo.type === "VOICE" ? "🎤 ভয়েস মেসেজ"
+                replyTo.type === "IMAGE" ? "📷 Photo"
+                : replyTo.type === "VOICE" ? "🎤 Voice message"
                 : replyTo.body.slice(0, 90),
             }
           : null,
@@ -386,7 +383,7 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
         loadingMore={loadingMore}
         hasMore={hasMore}
         typing={partnerTyping}
-        partnerName={partner?.displayName ?? "সে"}
+        partnerName={partner?.displayName ?? "them"}
         onScroll={onScroll}
         onReply={setReplyTo}
         onDelete={deleteMessage}
@@ -446,7 +443,6 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
         </div>
       )}
 
-      {secondsLeft !== null && <IdleWarning seconds={secondsLeft} />}
     </div>
   );
 }

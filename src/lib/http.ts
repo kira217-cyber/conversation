@@ -15,7 +15,7 @@ export function fail(status: number, message: string, errorCode?: string, errors
 export function zodFail(error: ZodError) {
   return fail(
     422,
-    "ইনপুট ঠিক নেই",
+    "Invalid input",
     "VALIDATION_ERROR",
     error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
   );
@@ -25,10 +25,10 @@ export function zodFail(error: ZodError) {
 export function authFail(reason: string) {
   const message =
     reason === "SESSION_IDLE"
-      ? "অনেকক্ষণ নিষ্ক্রিয় ছিলে — আবার লগইন করো"
+      ? "Signed out after a long time away"
       : reason === "SESSION_REVOKED"
-        ? "অন্য একটি ডিভাইসে লগইন হয়েছে"
-        : "লগইন করতে হবে";
+        ? "Signed in on another device"
+        : "Please sign in";
   return fail(401, message, reason);
 }
 
@@ -36,7 +36,7 @@ export function handleError(err: unknown) {
   console.error("[api]", err);
   const message =
     process.env.NODE_ENV === "production"
-      ? "কিছু একটা সমস্যা হয়েছে"
+      ? "Something went wrong"
       : err instanceof Error
         ? err.message
         : "Unknown error";

@@ -51,7 +51,7 @@ export async function api<T>(
 
   if (!res.ok) {
     if (res.status === 401 && !silent401) bounceToLogin(payload.errorCode);
-    throw new ApiError(res.status, payload.message ?? "সমস্যা হয়েছে", payload.errorCode);
+    throw new ApiError(res.status, payload.message ?? "Something went wrong", payload.errorCode);
   }
 
   return payload.data as T;

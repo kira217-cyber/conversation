@@ -9,10 +9,10 @@ async function main() {
 
   console.log("");
   if (!keyId || !token) {
-    console.error("❌ .env.local এ নেই:");
+    console.error("❌ Missing from .env.local:");
     if (!keyId) console.error("   • CLOUDFLARE_TURN_KEY_ID");
     if (!token) console.error("   • CLOUDFLARE_TURN_API_TOKEN");
-    console.error("\nএগুলো ছাড়াও অ্যাপ চলবে, কিন্তু কল শুধু একই WiFi তে কাজ করবে।\n");
+    console.error("\nThe app still runs without these, but calls will only work on the same network.\n");
     process.exit(1);
   }
 
@@ -27,9 +27,9 @@ async function main() {
 
   const text = await res.text();
   if (!res.ok) {
-    console.error(`❌ TURN credential পাওয়া গেল না (HTTP ${res.status})`);
+    console.error(`❌ Could not get TURN credentials (HTTP ${res.status})`);
     console.error(`   ${text.slice(0, 300)}\n`);
-    console.error("👉 Key ID আর API Token উল্টে যায়নি তো? দুটোই আলাদা মান।\n");
+    console.error("👉 Check the Key ID and API Token are not swapped — they are different values.\n");
     process.exit(1);
   }
 
@@ -48,21 +48,21 @@ async function main() {
   );
   const username = servers.find((s) => s.username)?.username;
 
-  console.log("✅ TURN credential ইস্যু হয়েছে");
-  if (username) console.log(`   username: ${username.slice(0, 14)}…  (১ ঘণ্টার মেয়াদ)`);
+  console.log("✅ TURN credentials issued");
+  if (username) console.log(`   username: ${username.slice(0, 14)}…  (valid for 1 hour)`);
   console.log("   servers:");
   for (const u of list) console.log(`     • ${u}`);
 
   const hasRelay = list.some((u) => u.startsWith("turn:") || u.startsWith("turns:"));
   if (!hasRelay) {
-    console.error("\n⚠️  শুধু STUN পাওয়া গেল, TURN relay নেই — আলাদা নেটওয়ার্কে কল আটকাতে পারে\n");
+    console.error("\n⚠️  Only STUN returned, no TURN relay — calls may fail across networks\n");
     process.exit(1);
   }
 
-  console.log("\n🎉 কল আলাদা নেটওয়ার্ক থেকেও কাজ করবে\n");
+  console.log("\n🎉 Calls will work across different networks\n");
 }
 
 main().catch((err) => {
-  console.error("\n❌ Cloudflare এ পৌঁছানো গেল না:\n", err instanceof Error ? err.message : err, "\n");
+  console.error("\n❌ Could not reach Cloudflare:\n", err instanceof Error ? err.message : err, "\n");
   process.exit(1);
 });
