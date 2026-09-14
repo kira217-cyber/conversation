@@ -5,6 +5,7 @@ import { handleError, ok } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 /**
  * সাধারণ logout, আবার ট্যাব বন্ধ হওয়ার সময় navigator.sendBeacon() থেকেও

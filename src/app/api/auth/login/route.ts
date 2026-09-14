@@ -9,6 +9,7 @@ import { fail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 const schema = z.object({
   email: z.email().transform((v) => v.toLowerCase().trim()),

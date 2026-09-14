@@ -2,12 +2,13 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getConversation, getPartner } from "@/lib/convo";
+import { getConversationId, getPartner } from "@/lib/convo";
 import { CH, EV, emit } from "@/lib/pusher";
 import { authFail, fail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 const schema = z.object({ video: z.boolean().default(false) });
 
@@ -20,20 +21,20 @@ export async function POST(req: NextRequest) {
     const parsed = schema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) return zodFail(parsed.error);
 
-    const [convo, partner] = await Promise.all([
-      getConversation(),
+    const [conversationId, partner] = await Promise.all([
+      getConversationId(),
       getPartner(auth.user.id),
     ]);
     if (!partner) return fail(400, "সঙ্গীর অ্যাকাউন্ট পাওয়া যায়নি", "NO_PARTNER");
 
     // আগের ঝুলে থাকা কল বন্ধ করে দাও, নাহলে দুটো কল একসাথে বাজবে
     await prisma.call.updateMany({
-      where: { conversationId: convo.id, status: { in: ["RINGING", "ONGOING"] } },
+      where: { conversationId: conversationId, status: { in: ["RINGING", "ONGOING"] } },
       data: { status: "ENDED", endedAt: new Date() },
     });
 
     const call = await prisma.call.create({
-      data: { conversationId: convo.id, callerId: auth.user.id, status: "RINGING" },
+      data: { conversationId: conversationId, callerId: auth.user.id, status: "RINGING" },
     });
 
     await emit(CH.user(partner.id), EV.callIncoming, {
@@ -58,9 +59,9 @@ export async function GET() {
     const auth = await getAuth();
     if (!auth.ok) return authFail(auth.reason);
 
-    const convo = await getConversation();
+    const conversationId = await getConversationId();
     const calls = await prisma.call.findMany({
-      where: { conversationId: convo.id },
+      where: { conversationId: conversationId },
       orderBy: { startedAt: "desc" },
       take: 50,
       select: {

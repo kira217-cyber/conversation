@@ -2,12 +2,13 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getConversation } from "@/lib/convo";
+import { getConversationId } from "@/lib/convo";
 import { CH, EV, emit } from "@/lib/pusher";
 import { authFail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 const schema = z.object({
   /** "delivered" = ✓✓ ধূসর, "read" = ✓✓ নীল */
@@ -26,13 +27,13 @@ export async function POST(req: NextRequest) {
     const parsed = schema.safeParse(await req.json());
     if (!parsed.success) return zodFail(parsed.error);
 
-    const convo = await getConversation();
+    const conversationId = await getConversationId();
     const now = new Date();
     const isRead = parsed.data.mode === "read";
 
     const result = await prisma.message.updateMany({
       where: {
-        conversationId: convo.id,
+        conversationId: conversationId,
         senderId: { not: auth.user.id },
         ...(isRead ? { readAt: null } : { deliveredAt: null }),
       },
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (result.count > 0) {
       await emit(
-        CH.convo(convo.id),
+        CH.convo(conversationId),
         isRead ? EV.messageRead : EV.messageDelivered,
         { by: auth.user.id, at: now.toISOString(), count: result.count },
       );

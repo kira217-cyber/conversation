@@ -27,6 +27,12 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
 
   const [partnerOnline, setPartnerOnline] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
+  /** পেজ লোডের স্ন্যাপশট দিয়ে শুরু, পরে presence ইভেন্টে হালনাগাদ হয় */
+  const [partnerLastSeen, setPartnerLastSeen] = useState<string | null>(
+    partner?.lastSeenAt ?? null,
+  );
+  /** "৫ মিনিট আগে" লেখাটা যেন নিজে থেকে বাড়তে থাকে */
+  const [, forceTick] = useState(0);
   const [connected, setConnected] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -152,12 +158,19 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
         if (m.id !== me.id) online = true;
       });
       setPartnerOnline(online);
+      return online;
     };
+
     convo.bind("pusher:subscription_succeeded", refreshPresence);
-    convo.bind("pusher:member_added", refreshPresence);
-    convo.bind("pusher:member_removed", () => {
-      refreshPresence();
+    convo.bind("pusher:member_added", (m: { id: string }) => {
+      if (m.id !== me.id) setPartnerOnline(true);
+    });
+    convo.bind("pusher:member_removed", (m: { id: string }) => {
+      if (m.id === me.id) return;
+      setPartnerOnline(false);
       setPartnerTyping(false);
+      // এইমাত্র বেরিয়ে গেল — সার্ভারে জিজ্ঞেস না করেই সময়টা জানি
+      setPartnerLastSeen(new Date().toISOString());
     });
 
     return () => {
@@ -168,6 +181,23 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convoId, me.id, initial.session.id, logout]);
+
+  /* ─────────────────── "শেষ দেখা" তাজা রাখা ─────────────────── */
+  useEffect(() => {
+    // অফলাইন থাকলে প্রতি ৩০ সেকেন্ডে লেখাটা নতুন করে হিসাব হোক
+    // ("২ মিনিট আগে" যেন "২ মিনিট আগে"ই আটকে না থাকে)
+    const tick = window.setInterval(() => forceTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  useEffect(() => {
+    // অনলাইন থাকা অবস্থায় শেষ দেখা = এখন। অফলাইন হলে এই মানটাই জমে থাকবে।
+    if (!partnerOnline) return;
+    const sync = () => setPartnerLastSeen(new Date().toISOString());
+    sync();
+    const t = window.setInterval(sync, 30_000);
+    return () => window.clearInterval(t);
+  }, [partnerOnline]);
 
   /* ─────────────────── না-পড়া মেসেজ পড়া হিসেবে চিহ্নিত ─────────────────── */
   useEffect(() => {
@@ -337,6 +367,7 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
     <div className="flex h-dvh flex-col bg-[var(--color-ink)]">
       <ChatHeader
         partner={partner}
+        lastSeen={partnerLastSeen}
         online={partnerOnline}
         typing={partnerTyping}
         connected={connected}

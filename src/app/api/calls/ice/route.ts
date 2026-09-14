@@ -4,6 +4,7 @@ import { authFail, handleError, ok } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 /** TURN credential কখনো ক্লায়েন্টে hardcode করা যাবে না — এখান থেকে
  *  স্বল্পমেয়াদি credential ইস্যু হয়। */

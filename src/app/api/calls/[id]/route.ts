@@ -2,12 +2,13 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getConversation, getPartner } from "@/lib/convo";
+import { getConversationId, getPartner } from "@/lib/convo";
 import { CH, EV, emit } from "@/lib/pusher";
 import { authFail, fail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 const schema = z.object({ action: z.enum(["accept", "reject", "end"]) });
 
@@ -20,8 +21,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const parsed = schema.safeParse(await req.json());
     if (!parsed.success) return zodFail(parsed.error);
 
-    const convo = await getConversation();
-    const call = await prisma.call.findFirst({ where: { id, conversationId: convo.id } });
+    const conversationId = await getConversationId();
+    const call = await prisma.call.findFirst({ where: { id, conversationId: conversationId } });
     if (!call) return fail(404, "কলটি নেই", "NOT_FOUND");
 
     const partner = await getPartner(auth.user.id);

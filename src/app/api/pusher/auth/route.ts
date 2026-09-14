@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getConversation } from "@/lib/convo";
+import { getConversationId } from "@/lib/convo";
 import { CH, pusherServer } from "@/lib/pusher";
 import { authFail, fail, handleError } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 /**
  * private-/presence- চ্যানেলে ঢোকার অনুমতি এখান থেকেই দেওয়া হয়।
@@ -22,9 +23,9 @@ export async function POST(req: NextRequest) {
     const channel = String(form.get("channel_name") ?? "");
     if (!socketId || !channel) return fail(400, "socket_id/channel_name নেই", "BAD_REQUEST");
 
-    const convo = await getConversation();
+    const conversationId = await getConversationId();
     const allowedUser = CH.user(auth.user.id);
-    const allowedConvo = CH.convo(convo.id);
+    const allowedConvo = CH.convo(conversationId);
 
     if (channel !== allowedUser && channel !== allowedConvo) {
       return fail(403, "এই চ্যানেলে ঢোকার অনুমতি নেই", "CHANNEL_FORBIDDEN");

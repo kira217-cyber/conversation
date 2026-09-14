@@ -2,13 +2,14 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getConversation } from "@/lib/convo";
+import { getConversationId } from "@/lib/convo";
 import { destroyAsset } from "@/lib/cloudinary";
 import { CH, EV, emit } from "@/lib/pusher";
 import { authFail, fail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -21,9 +22,9 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const scope = new URL(req.url).searchParams.get("scope") === "all" ? "all" : "me";
 
-    const convo = await getConversation();
+    const conversationId = await getConversationId();
     const msg = await prisma.message.findFirst({
-      where: { id, conversationId: convo.id },
+      where: { id, conversationId: conversationId },
     });
     if (!msg) return fail(404, "মেসেজটি নেই", "NOT_FOUND");
 
@@ -49,7 +50,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         },
       });
 
-      await emit(CH.convo(convo.id), EV.messageDeleted, { id, scope: "all" });
+      await emit(CH.convo(conversationId), EV.messageDeleted, { id, scope: "all" });
       return ok({ id, scope: "all" }, "সবার জন্য মুছে ফেলা হয়েছে");
     }
 
@@ -77,9 +78,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) return zodFail(parsed.error);
 
-    const convo = await getConversation();
+    const conversationId = await getConversationId();
     const msg = await prisma.message.findFirst({
-      where: { id, conversationId: convo.id, deletedForAll: false },
+      where: { id, conversationId: conversationId, deletedForAll: false },
     });
     if (!msg) return fail(404, "মেসেজটি নেই", "NOT_FOUND");
 
@@ -87,7 +88,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const next = msg.reaction === parsed.data.reaction ? null : parsed.data.reaction;
 
     await prisma.message.update({ where: { id }, data: { reaction: next } });
-    await emit(CH.convo(convo.id), EV.messageReaction, {
+    await emit(CH.convo(conversationId), EV.messageReaction, {
       id,
       reaction: next,
       by: auth.user.id,

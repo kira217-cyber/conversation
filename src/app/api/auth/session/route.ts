@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 /** GET — আমি কে, সঙ্গী কে, thread কোনটা। অ্যাপ চালু হলেই কল হয়। */
 export async function GET() {

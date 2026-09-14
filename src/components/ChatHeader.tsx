@@ -6,6 +6,8 @@ import type { Partner } from "@/types";
 
 export default function ChatHeader(props: {
   partner: Partner;
+  /** সার্ভারের পুরোনো স্ন্যাপশট নয় — presence ইভেন্টে হালনাগাদ হওয়া সময় */
+  lastSeen: string | null;
   online: boolean;
   typing: boolean;
   connected: boolean;
@@ -15,15 +17,15 @@ export default function ChatHeader(props: {
   onVideoCall: () => void;
   onLogout: () => void;
 }) {
-  const { partner, online, typing, connected, daysTogether, callActive } = props;
+  const { partner, lastSeen, online, typing, connected, daysTogether, callActive } = props;
   const [menu, setMenu] = useState(false);
 
   const status = typing
     ? "লিখছে..."
     : online
       ? "অনলাইন"
-      : partner?.lastSeenAt
-        ? `শেষ দেখা ${formatLastSeen(partner.lastSeenAt)}`
+      : lastSeen
+        ? `শেষ দেখা ${formatLastSeen(lastSeen)}`
         : "অফলাইন";
 
   const initial = partner?.displayName?.trim()?.[0] ?? "💜";

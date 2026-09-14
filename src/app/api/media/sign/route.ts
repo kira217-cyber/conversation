@@ -6,6 +6,7 @@ import { authFail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const preferredRegion = "sin1";
 
 const schema = z.object({ kind: z.enum(["image", "voice"]) });
 

@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getConversation } from "@/lib/convo";
+import { getConversationId } from "@/lib/convo";
 import { seal } from "@/lib/crypto";
 import { toDTO } from "@/lib/message";
 import { CH, EV, emit } from "@/lib/pusher";
@@ -10,6 +11,8 @@ import { authFail, fail, handleError, ok, zodFail } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** ডেটাবেস সিঙ্গাপুরে — ফাংশনও সেখানেই চলুক, নইলে প্রতিটা কোয়েরিতে পৃথিবী ঘোরে */
+export const preferredRegion = "sin1";
 
 const MAX_BODY = 5000;
 
@@ -27,10 +30,10 @@ export async function GET(req: NextRequest) {
     const cursor = searchParams.get("cursor");
     const limit = Math.min(Number(searchParams.get("limit") ?? 30), 60);
 
-    const convo = await getConversation();
+    const conversationId = await getConversationId();
 
     const rows = await prisma.message.findMany({
-      where: { conversationId: convo.id },
+      where: { conversationId },
       include: { replyTo: true },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
@@ -89,51 +92,57 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return zodFail(parsed.error);
     const input = parsed.data;
 
-    // নেট খারাপ হয়ে retry হলেও যেন ডাবল মেসেজ না যায়
-    const existing = await prisma.message.findUnique({
-      where: { clientMsgId: input.clientMsgId },
-      include: { replyTo: true },
-    });
-    if (existing) {
-      return ok({ message: toDTO(existing, auth.user.id), duplicate: true }, "আগেই পাঠানো হয়েছে");
-    }
-
-    const convo = await getConversation();
-
-    if (input.replyToId) {
-      const target = await prisma.message.findFirst({
-        where: { id: input.replyToId, conversationId: convo.id },
-        select: { id: true },
-      });
-      if (!target) return fail(400, "যে মেসেজের উত্তর দিচ্ছ সেটি নেই", "REPLY_NOT_FOUND");
-    }
-
+    const conversationId = await getConversationId(); // cached, DB hit নেই
     const sealed = input.body?.trim() ? seal(input.body.trim()) : {};
 
-    const created = await prisma.message.create({
-      data: {
-        conversationId: convo.id,
-        senderId: auth.user.id,
-        clientMsgId: input.clientMsgId,
-        type: input.type,
-        ...sealed,
-        replyToId: input.replyToId ?? null,
-        mediaPublicId: input.media?.publicId ?? null,
-        mediaMime: input.media?.mime ?? null,
-        mediaSize: input.media?.size ?? null,
-        mediaName: input.media?.name ?? null,
-        mediaWidth: input.media?.width ?? null,
-        mediaHeight: input.media?.height ?? null,
-        mediaDuration: input.media?.duration ?? null,
-        waveform: input.media?.waveform ?? [],
-      },
-      include: { replyTo: true },
-    });
+    const data = {
+      conversationId,
+      senderId: auth.user.id,
+      clientMsgId: input.clientMsgId,
+      type: input.type,
+      ...sealed,
+      replyToId: input.replyToId ?? null,
+      mediaPublicId: input.media?.publicId ?? null,
+      mediaMime: input.media?.mime ?? null,
+      mediaSize: input.media?.size ?? null,
+      mediaName: input.media?.name ?? null,
+      mediaWidth: input.media?.width ?? null,
+      mediaHeight: input.media?.height ?? null,
+      mediaDuration: input.media?.duration ?? null,
+      waveform: input.media?.waveform ?? [],
+    };
+
+    let created;
+    try {
+      created = await prisma.message.create({ data, include: { replyTo: true } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        // নেট খারাপ হয়ে retry হলে একই clientMsgId দুইবার আসে —
+        // আগে একটা SELECT করে দেখার বদলে unique constraint কেই কাজে লাগাই
+        if (err.code === "P2002") {
+          const existing = await prisma.message.findUnique({
+            where: { clientMsgId: input.clientMsgId },
+            include: { replyTo: true },
+          });
+          if (existing) {
+            return ok(
+              { message: toDTO(existing, auth.user.id), duplicate: true },
+              "আগেই পাঠানো হয়েছে",
+            );
+          }
+        }
+        // replyToId এমন মেসেজের দিকে দেখাচ্ছে যেটা নেই
+        if (err.code === "P2003") {
+          return fail(400, "যে মেসেজের উত্তর দিচ্ছ সেটি আর নেই", "REPLY_NOT_FOUND");
+        }
+      }
+      throw err;
+    }
 
     const dto = toDTO(created, auth.user.id)!;
 
     // socketId দেওয়ায় পাঠানোর ট্যাবে নিজের মেসেজ দ্বিতীয়বার আসবে না
-    await emit(CH.convo(convo.id), EV.messageNew, dto, input.socketId);
+    await emit(CH.convo(conversationId), EV.messageNew, dto, input.socketId);
 
     return ok({ message: dto, duplicate: false }, "পাঠানো হয়েছে");
   } catch (err) {
