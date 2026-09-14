@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Channel } from "pusher-js";
 import { api } from "@/lib/client/api";
+import { getMediaStream, mediaErrorMessage, stopStream } from "@/lib/client/media";
 import type { CallState } from "@/types";
 
 type Signal = { callId: string; from: string; payload: unknown };
@@ -16,72 +17,102 @@ type Incoming = {
  * ভয়েস (ও ভিডিও) কল।
  *
  * অডিও/ভিডিও সরাসরি দুই ব্রাউজারের মধ্যে যায় (peer-to-peer) —
- * আমাদের সার্ভার দিয়ে যায় না। সার্ভার শুধু "হ্যালো, আমি এখানে"
- * বার্তাগুলো (SDP + ICE) আদান-প্রদান করায়।
+ * আমাদের সার্ভার দিয়ে যায় না। সার্ভার শুধু SDP আর ICE বার্তাগুলো
+ * এদিক-ওদিক পৌঁছে দেয়।
  */
 export function useWebRTC(opts: {
   userChannel: Channel | null;
   partner: { id: string; displayName: string; avatarUrl: string | null } | null;
-  onCallEvent?: (kind: "ended" | "rejected" | "missed") => void;
+  onCallEvent?: (kind: "ended" | "rejected") => void;
 }) {
   const { userChannel, partner, onCallEvent } = opts;
 
   const [call, setCall] = useState<CallState | null>(null);
   const [muted, setMuted] = useState(false);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** ব্রাউজার autoplay আটকালে ব্যবহারকারীকে একটা ট্যাপ চাইতে হয় */
+  const [needsTap, setNeedsTap] = useState(false);
 
   const pc = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
-  const pendingOffer = useRef<RTCSessionDescriptionInit | null>(null);
+  const media = useRef<MediaStream | null>(null);
+  const pendingOffer = useRef<{ callId: string; sdp: RTCSessionDescriptionInit } | null>(null);
   const pendingIce = useRef<RTCIceCandidateInit[]>([]);
   const callIdRef = useRef<string | null>(null);
-  const remoteAudio = useRef<HTMLAudioElement | null>(null);
+  const audioEl = useRef<HTMLAudioElement | null>(null);
 
   /* ─────────── cleanup ─────────── */
   const teardown = useCallback(() => {
-    pc.current?.getSenders().forEach((s) => s.track?.stop());
-    pc.current?.close();
+    try {
+      pc.current?.close();
+    } catch {
+      /* ignore */
+    }
     pc.current = null;
-    localStream.current?.getTracks().forEach((t) => t.stop());
-    localStream.current = null;
+
+    stopStream(media.current);
+    media.current = null;
+
     pendingOffer.current = null;
     pendingIce.current = [];
     callIdRef.current = null;
+
+    if (audioEl.current) audioEl.current.srcObject = null;
+
+    setLocalStream(null);
     setRemoteStream(null);
     setMuted(false);
+    setNeedsTap(false);
     setCall(null);
   }, []);
 
-  const signal = useCallback(
-    (kind: "offer" | "answer" | "ice", payload: unknown) => {
-      if (!callIdRef.current) return;
-      api("/api/rtc", {
-        method: "POST",
-        json: { callId: callIdRef.current, kind, payload },
-        silent401: true,
-      }).catch(() => {});
-    },
-    [],
-  );
+  const signal = useCallback((kind: "offer" | "answer" | "ice", payload: unknown) => {
+    if (!callIdRef.current) return;
+    api("/api/rtc", {
+      method: "POST",
+      json: { callId: callIdRef.current, kind, payload },
+      silent401: true,
+    }).catch(() => {});
+  }, []);
 
-  /* ─────────── peer connection তৈরি ─────────── */
+  /** রিমোট অডিও বাজানো — autoplay ব্লক হলে ট্যাপ চাইব */
+  const playRemote = useCallback((stream: MediaStream) => {
+    if (!audioEl.current) {
+      const el = document.createElement("audio");
+      el.autoplay = true;
+      el.setAttribute("playsinline", "");
+      el.style.display = "none";
+      document.body.appendChild(el);
+      audioEl.current = el;
+    }
+    audioEl.current.srcObject = stream;
+    audioEl.current
+      .play()
+      .then(() => setNeedsTap(false))
+      .catch((err) => {
+        console.warn("[call] autoplay আটকেছে", err);
+        setNeedsTap(true);
+      });
+  }, []);
+
+  const resumeAudio = useCallback(() => {
+    audioEl.current
+      ?.play()
+      .then(() => setNeedsTap(false))
+      .catch(() => {});
+  }, []);
+
+  /* ─────────── peer connection ─────────── */
   const buildPeer = useCallback(
-    async (video: boolean) => {
+    async (stream: MediaStream) => {
       const { iceServers, turn } = await api<{ iceServers: RTCIceServer[]; turn: boolean }>(
         "/api/calls/ice",
       );
-      if (!turn) {
-        console.warn("[call] TURN নেই — আলাদা নেটওয়ার্কে কল নাও লাগতে পারে");
-      }
+      if (!turn) console.warn("[call] TURN নেই — আলাদা নেটওয়ার্কে কল নাও লাগতে পারে");
 
       const peer = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 4 });
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: video ? { width: 1280, height: 720, facingMode: "user" } : false,
-      });
-      localStream.current = stream;
       stream.getTracks().forEach((t) => peer.addTrack(t, stream));
 
       peer.onicecandidate = (e) => {
@@ -89,34 +120,24 @@ export function useWebRTC(opts: {
       };
 
       peer.ontrack = (e) => {
-        const [incoming] = e.streams;
+        const incoming = e.streams[0] ?? new MediaStream([e.track]);
         setRemoteStream(incoming);
-        // অডিও শোনার জন্য একটা লুকানো <audio> — ভিডিও ট্যাগ ছাড়াও কাজ করবে
-        if (!remoteAudio.current) {
-          const el = document.createElement("audio");
-          el.autoplay = true;
-          el.style.display = "none";
-          document.body.appendChild(el);
-          remoteAudio.current = el;
-        }
-        remoteAudio.current.srcObject = incoming;
-        void remoteAudio.current.play().catch(() => {});
+        playRemote(incoming);
       };
 
       peer.onconnectionstatechange = () => {
         const s = peer.connectionState;
         if (s === "connected") {
           setCall((c) => (c ? { ...c, status: "active", startedAt: c.startedAt ?? Date.now() } : c));
-        }
-        if (s === "failed" || s === "disconnected" || s === "closed") {
-          setCall((c) => (c && c.status === "active" ? { ...c, status: "ended" } : c));
+        } else if (s === "failed") {
+          setError("সংযোগ হলো না — নেটওয়ার্ক পাল্টে আবার চেষ্টা করো");
         }
       };
 
       pc.current = peer;
       return peer;
     },
-    [signal],
+    [signal, playRemote],
   );
 
   const drainIce = useCallback(async () => {
@@ -127,11 +148,26 @@ export function useWebRTC(opts: {
     }
   }, []);
 
-  /* ─────────── কল শুরু করা ─────────── */
+  /* ─────────── কল শুরু ─────────── */
   const startCall = useCallback(
     async (video = false) => {
       if (call || !partner) return;
       setError(null);
+
+      // ⚠️ সবার আগে মাইক চাই — এর আগে কোনো await নয়।
+      // নেটওয়ার্ক কল মাঝে থাকলে iOS Safari অনুমতির প্রম্পট বাতিল করে দেয়।
+      let stream: MediaStream;
+      try {
+        stream = await getMediaStream(video);
+      } catch (err) {
+        console.error("[call] getUserMedia", err);
+        setError(mediaErrorMessage(err, video));
+        return;
+      }
+
+      media.current = stream;
+      setLocalStream(stream);
+
       try {
         const { callId } = await api<{ callId: string }>("/api/calls", {
           method: "POST",
@@ -147,13 +183,13 @@ export function useWebRTC(opts: {
           startedAt: null,
         });
 
-        const peer = await buildPeer(video);
+        const peer = await buildPeer(stream);
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         signal("offer", offer);
       } catch (err) {
         console.error("[call] start failed", err);
-        setError("কল শুরু করা গেল না — মাইক্রোফোনের অনুমতি দিয়েছ তো?");
+        setError("কল শুরু করা গেল না");
         teardown();
       }
     },
@@ -164,14 +200,36 @@ export function useWebRTC(opts: {
   const accept = useCallback(async () => {
     if (!call || call.role !== "callee") return;
     setError(null);
-    try {
-      setCall((c) => (c ? { ...c, status: "connecting" } : c));
 
-      const peer = await buildPeer(call.video);
-      if (pendingOffer.current) {
-        await peer.setRemoteDescription(new RTCSessionDescription(pendingOffer.current));
+    // এখানেও মাইক আগে — "Accept" ট্যাপের সাথে সাথেই
+    let stream: MediaStream;
+    try {
+      stream = await getMediaStream(call.video);
+    } catch (err) {
+      console.error("[call] accept getUserMedia", err);
+      setError(mediaErrorMessage(err, call.video));
+      await api(`/api/calls/${call.callId}`, {
+        method: "PATCH",
+        json: { action: "reject" },
+        silent401: true,
+      }).catch(() => {});
+      teardown();
+      return;
+    }
+
+    media.current = stream;
+    setLocalStream(stream);
+    setCall((c) => (c ? { ...c, status: "connecting" } : c));
+
+    try {
+      const peer = await buildPeer(stream);
+
+      const offer = pendingOffer.current;
+      if (offer && offer.callId === call.callId) {
+        await peer.setRemoteDescription(new RTCSessionDescription(offer.sdp));
         await drainIce();
       }
+
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       signal("answer", answer);
@@ -184,7 +242,7 @@ export function useWebRTC(opts: {
     }
   }, [call, buildPeer, drainIce, signal, teardown]);
 
-  /* ─────────── কাটা / রিজেক্ট ─────────── */
+  /* ─────────── কাটা ─────────── */
   const hangup = useCallback(
     async (action: "reject" | "end" = "end") => {
       const id = callIdRef.current ?? call?.callId;
@@ -199,19 +257,18 @@ export function useWebRTC(opts: {
   );
 
   const toggleMute = useCallback(() => {
-    const track = localStream.current?.getAudioTracks()[0];
+    const track = media.current?.getAudioTracks()[0];
     if (!track) return;
     track.enabled = !track.enabled;
     setMuted(!track.enabled);
   }, []);
 
-  /* ─────────── Pusher signaling ─────────── */
+  /* ─────────── signaling ─────────── */
   useEffect(() => {
     if (!userChannel) return;
 
     const onIncoming = (data: Incoming) => {
-      // ইতিমধ্যে কলে থাকলে নতুন রিং উপেক্ষা করি
-      if (callIdRef.current) return;
+      if (callIdRef.current) return; // ইতিমধ্যে কলে আছি
       callIdRef.current = data.callId;
       setCall({
         callId: data.callId,
@@ -224,13 +281,13 @@ export function useWebRTC(opts: {
     };
 
     const onOffer = async ({ callId, payload }: Signal) => {
-      if (callId !== callIdRef.current) return;
-      const offer = payload as RTCSessionDescriptionInit;
-      if (pc.current) {
-        await pc.current.setRemoteDescription(new RTCSessionDescription(offer));
+      const sdp = payload as RTCSessionDescriptionInit;
+      // offer কখনো call:incoming এর আগেও পৌঁছাতে পারে — তাই callId ধরে জমিয়ে রাখি
+      if (pc.current && callId === callIdRef.current) {
+        await pc.current.setRemoteDescription(new RTCSessionDescription(sdp));
         await drainIce();
       } else {
-        pendingOffer.current = offer; // এখনো accept করা হয়নি
+        pendingOffer.current = { callId, sdp };
       }
     };
 
@@ -249,7 +306,7 @@ export function useWebRTC(opts: {
       if (pc.current?.remoteDescription) {
         await pc.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
       } else {
-        pendingIce.current.push(candidate); // remote description আসার আগে জমিয়ে রাখি
+        pendingIce.current.push(candidate);
       }
     };
 
@@ -282,13 +339,27 @@ export function useWebRTC(opts: {
     };
   }, [userChannel, drainIce, teardown, onCallEvent]);
 
-  // পেজ বন্ধ হলে কল ঝুলে থাকবে না
+  // পেজ ছাড়ার সময় মাইক ছেড়ে দাও
   useEffect(() => {
     return () => {
-      remoteAudio.current?.remove();
-      remoteAudio.current = null;
+      stopStream(media.current);
+      audioEl.current?.remove();
+      audioEl.current = null;
     };
   }, []);
 
-  return { call, muted, remoteStream, error, startCall, accept, hangup, toggleMute, localStream };
+  return {
+    call,
+    muted,
+    remoteStream,
+    localStream,
+    error,
+    needsTap,
+    startCall,
+    accept,
+    hangup,
+    toggleMute,
+    resumeAudio,
+    clearError: () => setError(null),
+  };
 }

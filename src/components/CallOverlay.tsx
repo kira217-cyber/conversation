@@ -1,29 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Phone, PhoneOff } from "lucide-react";
+import { Mic, MicOff, Phone, PhoneOff, Volume2 } from "lucide-react";
 import type { CallState } from "@/types";
 
 export default function CallOverlay({
   call,
   muted,
   error,
+  needsTap,
   remoteStream,
   localStream,
   onAccept,
   onReject,
   onEnd,
   onToggleMute,
+  onResumeAudio,
 }: {
   call: CallState;
   muted: boolean;
   error: string | null;
+  needsTap: boolean;
   remoteStream: MediaStream | null;
   localStream: MediaStream | null;
   onAccept: () => void;
   onReject: () => void;
   onEnd: () => void;
   onToggleMute: () => void;
+  onResumeAudio: () => void;
 }) {
   const [seconds, setSeconds] = useState(0);
   const remoteVideo = useRef<HTMLVideoElement>(null);
@@ -111,12 +115,23 @@ export default function CallOverlay({
         )}
 
         <p
-          className={`mt-2 text-sm ${
+          className={`mt-2 max-w-sm text-sm ${
             error ? "text-red-300" : "text-[var(--color-accent-soft)]"
           } ${call.video && remoteStream ? "rounded-full bg-black/50 px-4 py-1.5" : ""}`}
         >
           {label}
         </p>
+
+        {/* ব্রাউজার নিজে থেকে অডিও বাজাতে না দিলে একটা ট্যাপ লাগে */}
+        {needsTap && (
+          <button
+            onClick={onResumeAudio}
+            className="mt-4 flex items-center gap-2 rounded-full bg-white/15 px-5 py-2.5 text-sm font-medium text-white backdrop-blur transition active:scale-95"
+          >
+            <Volume2 className="h-4 w-4" />
+            শোনার জন্য এখানে চাপো
+          </button>
+        )}
       </div>
 
       <div className="relative z-10 flex items-center justify-center gap-6 pb-16">

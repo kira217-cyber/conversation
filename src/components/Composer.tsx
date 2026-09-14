@@ -168,9 +168,15 @@ export default function Composer({
       )}
 
       {(error || voice.error) && (
-        <div className="flex items-center justify-between border-b border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-200">
-          <span>{error ?? voice.error}</span>
-          <button onClick={() => setError(null)}>
+        <div className="flex items-start gap-3 border-b border-red-500/20 bg-red-500/10 px-4 py-2.5 text-xs leading-relaxed text-red-200">
+          <span className="flex-1">{error ?? voice.error}</span>
+          <button
+            onClick={() => {
+              setError(null);
+              voice.clearError();
+            }}
+            className="mt-0.5 shrink-0"
+          >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>

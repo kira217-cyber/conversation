@@ -392,13 +392,27 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
           call={rtc.call}
           muted={rtc.muted}
           error={rtc.error}
+          needsTap={rtc.needsTap}
           remoteStream={rtc.remoteStream}
-          localStream={rtc.localStream.current}
+          localStream={rtc.localStream}
           onAccept={rtc.accept}
           onReject={() => rtc.hangup("reject")}
           onEnd={() => rtc.hangup("end")}
           onToggleMute={rtc.toggleMute}
+          onResumeAudio={rtc.resumeAudio}
         />
+      )}
+
+      {/* কল ছাড়াই মাইকের সমস্যা হলে (যেমন অনুমতি নেই) */}
+      {!rtc.call && rtc.error && (
+        <div className="fixed inset-x-0 bottom-24 z-40 flex justify-center px-4">
+          <div className="flex max-w-md items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/15 px-4 py-3 text-xs text-red-100 shadow-lg backdrop-blur">
+            <span className="flex-1">{rtc.error}</span>
+            <button onClick={rtc.clearError} className="shrink-0 font-semibold">
+              ✕
+            </button>
+          </div>
+        </div>
       )}
 
       {secondsLeft !== null && <IdleWarning seconds={secondsLeft} />}
