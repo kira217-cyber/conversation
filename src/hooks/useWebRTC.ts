@@ -11,6 +11,7 @@ import {
   stopStream,
   tuneOpusForVoice,
 } from "@/lib/client/media";
+import { boostRemote, processMic, type AudioChain } from "@/lib/client/audio-chain";
 import type { CallState } from "@/types";
 
 type Signal = { callId: string; from: string; payload: unknown };
@@ -45,7 +46,12 @@ export function useWebRTC(opts: {
   const [needsTap, setNeedsTap] = useState(false);
 
   const pc = useRef<RTCPeerConnection | null>(null);
+  /** straight from the camera and microphone — muting acts on this */
   const media = useRef<MediaStream | null>(null);
+  /** what is actually sent: the same video, the microphone cleaned up */
+  const sent = useRef<MediaStream | null>(null);
+  const micChain = useRef<AudioChain | null>(null);
+  const remoteBoost = useRef<{ dispose: () => void; resume: () => Promise<void> } | null>(null);
   /** the camera track parked while the screen is being shared */
   const cameraTrack = useRef<MediaStreamTrack | null>(null);
   const screenStream = useRef<MediaStream | null>(null);
@@ -65,10 +71,17 @@ export function useWebRTC(opts: {
     }
     pc.current = null;
 
+    micChain.current?.dispose();
+    remoteBoost.current?.dispose();
+    micChain.current = null;
+    remoteBoost.current = null;
+
     stopStream(media.current);
+    stopStream(sent.current);
     stopStream(screenStream.current);
     cameraTrack.current?.stop();
     media.current = null;
+    sent.current = null;
     screenStream.current = null;
     cameraTrack.current = null;
 
@@ -114,6 +127,11 @@ export function useWebRTC(opts: {
       audioEl.current = el;
     }
     audioEl.current.srcObject = stream;
+
+    // Lift a quiet voice past what an element's volume can reach
+    remoteBoost.current?.dispose();
+    remoteBoost.current = boostRemote(stream, audioEl.current);
+
     audioEl.current
       .play()
       .then(() => setNeedsTap(false))
@@ -124,10 +142,24 @@ export function useWebRTC(opts: {
   }, []);
 
   const resumeAudio = useCallback(() => {
+    void remoteBoost.current?.resume();
     audioEl.current
       ?.play()
       .then(() => setNeedsTap(false))
       .catch(() => {});
+  }, []);
+
+  /**
+   * Builds the stream that actually goes out: the same camera, with the
+   * microphone run through the cleanup chain. Falls back to the raw
+   * microphone if the browser has no Web Audio to do it with.
+   */
+  const prepareOutgoing = useCallback((raw: MediaStream) => {
+    micChain.current?.dispose();
+    micChain.current = processMic(raw);
+    const outgoing = micChain.current?.stream ?? raw;
+    sent.current = outgoing;
+    return outgoing;
   }, []);
 
   /* ─────────── peer connection ─────────── */
@@ -211,7 +243,7 @@ export function useWebRTC(opts: {
           startedAt: null,
         });
 
-        const peer = await buildPeer(stream);
+        const peer = await buildPeer(prepareOutgoing(stream));
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         signal("offer", { ...offer, sdp: tuneOpusForVoice(offer.sdp ?? "") });
@@ -221,7 +253,7 @@ export function useWebRTC(opts: {
         teardown();
       }
     },
-    [call, partner, buildPeer, signal, teardown],
+    [call, partner, buildPeer, prepareOutgoing, signal, teardown],
   );
 
   /* ─────────── answer ─────────── */
@@ -250,7 +282,7 @@ export function useWebRTC(opts: {
     setCall((c) => (c ? { ...c, status: "connecting" } : c));
 
     try {
-      const peer = await buildPeer(stream);
+      const peer = await buildPeer(prepareOutgoing(stream));
 
       const offer = pendingOffer.current;
       if (offer && offer.callId === call.callId) {
@@ -268,7 +300,7 @@ export function useWebRTC(opts: {
       setError("Could not answer the call");
       teardown();
     }
-  }, [call, buildPeer, drainIce, signal, teardown]);
+  }, [call, buildPeer, prepareOutgoing, drainIce, signal, teardown]);
 
   /* ─────────── hang up ─────────── */
   const hangup = useCallback(

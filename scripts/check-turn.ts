@@ -66,3 +66,5 @@ main().catch((err) => {
   console.error("\n❌ Could not reach Cloudflare:\n", err instanceof Error ? err.message : err, "\n");
   process.exit(1);
 });
+
+export {};

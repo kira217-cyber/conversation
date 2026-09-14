@@ -7,6 +7,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Pages must never be served from cache. The Android wrapper is
+        // Chrome underneath, and a cached page kept pointing at the
+        // JavaScript bundles of an old deploy — so fixes that were live
+        // on the site simply did not appear in the app.
+        source: "/:path((?!_next/static).*)",
+        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
