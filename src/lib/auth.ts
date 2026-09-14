@@ -39,8 +39,24 @@ async function signSessionToken(payload: SessionPayload, expiresAt: Date) {
     .sign(secret());
 }
 
-/** কত দিন ইনস্টল করা অ্যাপ লগইন থাকবে */
+/** How long the installed app stays signed in */
 const PERSISTENT_DAYS = 60;
+
+/**
+ * How long a signed token stays valid.
+ *
+ * Deliberately longer than the idle window. The database is what decides
+ * whether a session is still alive — every request checks it — so the
+ * token only has to outlive the gaps between requests. Signing it for
+ * exactly the idle limit meant a browser session died a fixed time after
+ * signing in no matter how much the person was using it, because the
+ * token was never re-issued.
+ */
+function tokenLifeMs(persistent: boolean) {
+  return persistent
+    ? PERSISTENT_DAYS * 24 * 60 * 60 * 1000
+    : Math.max(idleLimitMs() * 4, 2 * 60 * 60 * 1000);
+}
 
 /**
  * ব্রাউজারে cookie-তে ইচ্ছে করেই maxAge দেওয়া হয় না — ব্রাউজার বন্ধ
@@ -132,7 +148,7 @@ export async function createSession(opts: {
 
   const token = await signSessionToken(
     { uid: user.id, sid: session.id, did: deviceId, role: user.role },
-    expiresAt,
+    new Date(now.getTime() + tokenLifeMs(persistent)),
   );
 
   const jar = await cookies();
@@ -197,6 +213,31 @@ export async function getAuth(opts?: { touch?: boolean }): Promise<AuthResult> {
 
   const { user, ...rest } = session;
   return { ok: true, user, session: rest as Session, payload };
+}
+
+/**
+ * Re-issues the cookie with a fresh expiry. Called from the heartbeat, so
+ * a tab that stays open keeps a valid token indefinitely — while the
+ * database still enforces the idle rule.
+ */
+export async function refreshSessionCookie(auth: Extract<AuthResult, { ok: true }>) {
+  const { session, user, payload } = auth;
+  const token = await signSessionToken(
+    { uid: user.id, sid: session.id, did: payload.did, role: user.role },
+    new Date(Date.now() + tokenLifeMs(session.persistent)),
+  );
+
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, token, cookieOptions(session.persistent));
+
+  // Installed apps also get their window pushed out, so an app in daily
+  // use never reaches the sixty-day limit.
+  if (session.persistent) {
+    const next = new Date(Date.now() + PERSISTENT_DAYS * 24 * 60 * 60 * 1000);
+    if (next.getTime() - session.expiresAt.getTime() > 24 * 60 * 60 * 1000) {
+      await prisma.session.update({ where: { id: session.id }, data: { expiresAt: next } });
+    }
+  }
 }
 
 export async function revokeCurrentSession(reason: string) {

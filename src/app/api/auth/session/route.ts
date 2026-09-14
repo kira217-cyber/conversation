@@ -1,4 +1,4 @@
-import { getAuth } from "@/lib/auth";
+import { getAuth, refreshSessionCookie } from "@/lib/auth";
 import { getConversation, getPartner } from "@/lib/convo";
 import { env } from "@/lib/env";
 import { authFail, handleError, ok } from "@/lib/http";
@@ -66,6 +66,11 @@ export async function POST() {
       where: { id: auth.user.id },
       data: { lastSeenAt: now },
     });
+
+    // Hand back a freshly signed cookie. Without this the token expires a
+    // fixed time after signing in and the person is thrown out mid-use,
+    // however active they have been.
+    await refreshSessionCookie(auth);
 
     return ok({ lastActiveAt: now.toISOString() });
   } catch (err) {

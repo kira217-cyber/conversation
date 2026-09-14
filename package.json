@@ -18,7 +18,8 @@
     "check:pusher": "dotenv -e .env.local -- tsx scripts/check-pusher.ts",
     "check:cloudinary": "dotenv -e .env.local -- tsx scripts/check-cloudinary.ts",
     "check:turn": "dotenv -e .env.local -- tsx scripts/check-turn.ts",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "check:linkify": "tsx scripts/check-linkify.ts"
   },
   "prisma": {
     "seed": "dotenv -e .env.local -- tsx prisma/seed.ts"

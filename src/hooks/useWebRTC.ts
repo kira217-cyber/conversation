@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Channel } from "pusher-js";
 import { api } from "@/lib/client/api";
-import { getMediaStream, mediaErrorMessage, stopStream } from "@/lib/client/media";
+import {
+  cameraConstraints,
+  checkSupport,
+  getMediaStream,
+  mediaErrorMessage,
+  stopStream,
+  tuneOpusForVoice,
+} from "@/lib/client/media";
 import type { CallState } from "@/types";
 
 type Signal = { callId: string; from: string; payload: unknown };
@@ -14,11 +21,10 @@ type Incoming = {
 };
 
 /**
- * ভয়েস (ও ভিডিও) কল।
+ * Voice and video calls.
  *
- * অডিও/ভিডিও সরাসরি দুই ব্রাউজারের মধ্যে যায় (peer-to-peer) —
- * আমাদের সার্ভার দিয়ে যায় না। সার্ভার শুধু SDP আর ICE বার্তাগুলো
- * এদিক-ওদিক পৌঁছে দেয়।
+ * The media itself goes straight between the two browsers; our server only
+ * carries the SDP and ICE messages that let them find each other.
  */
 export function useWebRTC(opts: {
   userChannel: Channel | null;
@@ -29,18 +35,26 @@ export function useWebRTC(opts: {
 
   const [call, setCall] = useState<CallState | null>(null);
   const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [sharingScreen, setSharingScreen] = useState(false);
+  const [facing, setFacing] = useState<"user" | "environment">("user");
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** ব্রাউজার autoplay আটকালে ব্যবহারকারীকে একটা ট্যাপ চাইতে হয় */
+  /** the browser blocked autoplay and wants a tap before it will make sound */
   const [needsTap, setNeedsTap] = useState(false);
 
   const pc = useRef<RTCPeerConnection | null>(null);
   const media = useRef<MediaStream | null>(null);
+  /** the camera track parked while the screen is being shared */
+  const cameraTrack = useRef<MediaStreamTrack | null>(null);
+  const screenStream = useRef<MediaStream | null>(null);
   const pendingOffer = useRef<{ callId: string; sdp: RTCSessionDescriptionInit } | null>(null);
   const pendingIce = useRef<RTCIceCandidateInit[]>([]);
   const callIdRef = useRef<string | null>(null);
   const audioEl = useRef<HTMLAudioElement | null>(null);
+
+  const canShareScreen = typeof window !== "undefined" && checkSupport().screenShare;
 
   /* ─────────── cleanup ─────────── */
   const teardown = useCallback(() => {
@@ -52,7 +66,11 @@ export function useWebRTC(opts: {
     pc.current = null;
 
     stopStream(media.current);
+    stopStream(screenStream.current);
+    cameraTrack.current?.stop();
     media.current = null;
+    screenStream.current = null;
+    cameraTrack.current = null;
 
     pendingOffer.current = null;
     pendingIce.current = [];
@@ -63,6 +81,8 @@ export function useWebRTC(opts: {
     setLocalStream(null);
     setRemoteStream(null);
     setMuted(false);
+    setCameraOff(false);
+    setSharingScreen(false);
     setNeedsTap(false);
     setCall(null);
   }, []);
@@ -76,7 +96,14 @@ export function useWebRTC(opts: {
     }).catch(() => {});
   }, []);
 
-  /** রিমোট অডিও বাজানো — autoplay ব্লক হলে ট্যাপ চাইব */
+  /**
+   * Remote sound plays through exactly one element — this hidden <audio>.
+   *
+   * It used to also play through the <video> tag on a video call. Two
+   * copies a few milliseconds apart sound like a metallic echo, and the
+   * duplicate output defeats echo cancellation, which then lets the
+   * speaker feed back into the microphone. That was the noise.
+   */
   const playRemote = useCallback((stream: MediaStream) => {
     if (!audioEl.current) {
       const el = document.createElement("audio");
@@ -148,17 +175,17 @@ export function useWebRTC(opts: {
     }
   }, []);
 
-  /* ─────────── কল শুরু ─────────── */
+  /* ─────────── start a call ─────────── */
   const startCall = useCallback(
     async (video = false) => {
       if (call || !partner) return;
       setError(null);
 
-      // ⚠️ সবার আগে মাইক চাই — এর আগে কোনো await নয়।
-      // নেটওয়ার্ক কল মাঝে থাকলে iOS Safari অনুমতির প্রম্পট বাতিল করে দেয়।
+      // ⚠️ Microphone first, before any await on the network. iOS Safari
+      // dismisses the permission prompt if a request comes in between.
       let stream: MediaStream;
       try {
-        stream = await getMediaStream(video);
+        stream = await getMediaStream(video, "user");
       } catch (err) {
         console.error("[call] getUserMedia", err);
         setError(mediaErrorMessage(err, video));
@@ -167,6 +194,7 @@ export function useWebRTC(opts: {
 
       media.current = stream;
       setLocalStream(stream);
+      setFacing("user");
 
       try {
         const { callId } = await api<{ callId: string }>("/api/calls", {
@@ -186,7 +214,7 @@ export function useWebRTC(opts: {
         const peer = await buildPeer(stream);
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
-        signal("offer", offer);
+        signal("offer", { ...offer, sdp: tuneOpusForVoice(offer.sdp ?? "") });
       } catch (err) {
         console.error("[call] start failed", err);
         setError("Could not start the call");
@@ -196,15 +224,14 @@ export function useWebRTC(opts: {
     [call, partner, buildPeer, signal, teardown],
   );
 
-  /* ─────────── কল ধরা ─────────── */
+  /* ─────────── answer ─────────── */
   const accept = useCallback(async () => {
     if (!call || call.role !== "callee") return;
     setError(null);
 
-    // এখানেও মাইক আগে — "Accept" ট্যাপের সাথে সাথেই
     let stream: MediaStream;
     try {
-      stream = await getMediaStream(call.video);
+      stream = await getMediaStream(call.video, "user");
     } catch (err) {
       console.error("[call] accept getUserMedia", err);
       setError(mediaErrorMessage(err, call.video));
@@ -219,6 +246,7 @@ export function useWebRTC(opts: {
 
     media.current = stream;
     setLocalStream(stream);
+    setFacing("user");
     setCall((c) => (c ? { ...c, status: "connecting" } : c));
 
     try {
@@ -232,7 +260,7 @@ export function useWebRTC(opts: {
 
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
-      signal("answer", answer);
+      signal("answer", { ...answer, sdp: tuneOpusForVoice(answer.sdp ?? "") });
 
       await api(`/api/calls/${call.callId}`, { method: "PATCH", json: { action: "accept" } });
     } catch (err) {
@@ -242,7 +270,7 @@ export function useWebRTC(opts: {
     }
   }, [call, buildPeer, drainIce, signal, teardown]);
 
-  /* ─────────── কাটা ─────────── */
+  /* ─────────── hang up ─────────── */
   const hangup = useCallback(
     async (action: "reject" | "end" = "end") => {
       const id = callIdRef.current ?? call?.callId;
@@ -263,12 +291,119 @@ export function useWebRTC(opts: {
     setMuted(!track.enabled);
   }, []);
 
-  /* ─────────── signaling ─────────── */
+  const toggleCamera = useCallback(() => {
+    const track = media.current?.getVideoTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setCameraOff(!track.enabled);
+  }, []);
+
+  /** Front ↔ back. replaceTrack swaps it without renegotiating. */
+  const switchCamera = useCallback(async () => {
+    if (!call?.video || sharingScreen) return;
+    const next = facing === "user" ? "environment" : "user";
+
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({
+        video: cameraConstraints(next),
+        audio: false,
+      });
+      const track = fresh.getVideoTracks()[0];
+      track.contentHint = "motion";
+
+      const sender = pc.current?.getSenders().find((s) => s.track?.kind === "video");
+      await sender?.replaceTrack(track);
+
+      const old = media.current?.getVideoTracks()[0];
+      if (old && media.current) {
+        media.current.removeTrack(old);
+        old.stop();
+        media.current.addTrack(track);
+        setLocalStream(new MediaStream(media.current.getTracks()));
+      }
+      setFacing(next);
+    } catch (err) {
+      console.error("[call] camera switch failed", err);
+      setError("Could not switch camera");
+    }
+  }, [call?.video, facing, sharingScreen]);
+
+  /**
+   * Screen sharing swaps the outgoing video track. No renegotiation is
+   * needed for a like-for-like swap, so it only works during a video call
+   * — an audio call has no video sender to replace.
+   */
+  const startScreenShare = useCallback(async () => {
+    if (!call?.video || !pc.current) return;
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      const track = display.getVideoTracks()[0];
+      // "detail" keeps text sharp at the cost of frame rate, which is the
+      // right trade for a screen
+      track.contentHint = "detail";
+
+      const sender = pc.current.getSenders().find((s) => s.track?.kind === "video");
+      if (!sender) {
+        stopStream(display);
+        return;
+      }
+
+      cameraTrack.current = media.current?.getVideoTracks()[0] ?? null;
+      screenStream.current = display;
+      await sender.replaceTrack(track);
+      setSharingScreen(true);
+      setLocalStream(display);
+
+      // The browser's own "Stop sharing" bar bypasses our button
+      track.addEventListener("ended", () => void stopScreenShare());
+    } catch (err) {
+      // Cancelling the picker throws NotAllowedError; that is not a failure
+      if ((err as DOMException)?.name !== "NotAllowedError") {
+        console.error("[call] screen share failed", err);
+        setError("Could not share the screen");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call?.video]);
+
+  const stopScreenShare = useCallback(async () => {
+    const sender = pc.current?.getSenders().find((s) => s.track?.kind === "video");
+    const camera = cameraTrack.current;
+
+    stopStream(screenStream.current);
+    screenStream.current = null;
+
+    if (sender && camera && camera.readyState === "live") {
+      await sender.replaceTrack(camera);
+    } else if (sender && call?.video) {
+      // The camera track died while sharing — open a fresh one
+      try {
+        const fresh = await navigator.mediaDevices.getUserMedia({
+          video: cameraConstraints(facing),
+          audio: false,
+        });
+        const t = fresh.getVideoTracks()[0];
+        t.contentHint = "motion";
+        await sender.replaceTrack(t);
+        cameraTrack.current = t;
+      } catch {
+        /* nothing more to try */
+      }
+    }
+
+    setSharingScreen(false);
+    if (media.current) setLocalStream(new MediaStream(media.current.getTracks()));
+  }, [call?.video, facing]);
+
+  /* ─────────── signalling ─────────── */
   useEffect(() => {
     if (!userChannel) return;
 
     const onIncoming = (data: Incoming) => {
-      if (callIdRef.current) return; // ইতিমধ্যে কলে আছি
+      if (callIdRef.current) return; // already on a call
       callIdRef.current = data.callId;
       setCall({
         callId: data.callId,
@@ -282,7 +417,7 @@ export function useWebRTC(opts: {
 
     const onOffer = async ({ callId, payload }: Signal) => {
       const sdp = payload as RTCSessionDescriptionInit;
-      // offer কখনো call:incoming এর আগেও পৌঁছাতে পারে — তাই callId ধরে জমিয়ে রাখি
+      // The offer can arrive before call:incoming, so keep it by callId
       if (pc.current && callId === callIdRef.current) {
         await pc.current.setRemoteDescription(new RTCSessionDescription(sdp));
         await drainIce();
@@ -339,10 +474,11 @@ export function useWebRTC(opts: {
     };
   }, [userChannel, drainIce, teardown, onCallEvent]);
 
-  // পেজ ছাড়ার সময় মাইক ছেড়ে দাও
+  // Release the microphone when the page goes away
   useEffect(() => {
     return () => {
       stopStream(media.current);
+      stopStream(screenStream.current);
       audioEl.current?.remove();
       audioEl.current = null;
     };
@@ -351,6 +487,10 @@ export function useWebRTC(opts: {
   return {
     call,
     muted,
+    cameraOff,
+    sharingScreen,
+    facing,
+    canShareScreen,
     remoteStream,
     localStream,
     error,
@@ -359,6 +499,10 @@ export function useWebRTC(opts: {
     accept,
     hangup,
     toggleMute,
+    toggleCamera,
+    switchCamera,
+    startScreenShare,
+    stopScreenShare,
     resumeAudio,
     clearError: () => setError(null),
   };

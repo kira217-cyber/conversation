@@ -465,6 +465,10 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
         <CallOverlay
           call={rtc.call}
           muted={rtc.muted}
+          cameraOff={rtc.cameraOff}
+          sharingScreen={rtc.sharingScreen}
+          canShareScreen={rtc.canShareScreen}
+          facing={rtc.facing}
           error={rtc.error}
           needsTap={rtc.needsTap}
           remoteStream={rtc.remoteStream}
@@ -473,6 +477,10 @@ export default function ChatApp({ initial }: { initial: SessionInfo }) {
           onReject={() => rtc.hangup("reject")}
           onEnd={() => rtc.hangup("end")}
           onToggleMute={rtc.toggleMute}
+          onToggleCamera={rtc.toggleCamera}
+          onSwitchCamera={() => void rtc.switchCamera()}
+          onStartShare={() => void rtc.startScreenShare()}
+          onStopShare={() => void rtc.stopScreenShare()}
           onResumeAudio={rtc.resumeAudio}
         />
       )}

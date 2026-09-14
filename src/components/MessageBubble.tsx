@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { AlertCircle, Check, CheckCheck, Clock, Reply, Trash2, X } from "lucide-react";
 import type { Message } from "@/types";
 import VoicePlayer from "./VoicePlayer";
+import RichText from "./RichText";
 
 const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 
@@ -149,7 +150,7 @@ export default function MessageBubble({
 
             {message.body && (
               <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
-                {message.body}
+                <RichText text={message.body} mine={mine} />
               </p>
             )}
 
