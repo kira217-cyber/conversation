@@ -41,7 +41,8 @@ It was originally built as a birthday gift. It works well as a template for any 
 | 📞 **Calls** | Peer-to-peer voice **and** video over WebRTC, with ringtone, mute, and call timer |
 | 🔐 **Session security** | Single-device enforcement, tab-close logout, 30-minute idle expiry |
 | 🔒 **Encryption** | AES-256-GCM on message bodies at rest; signed, private media URLs |
-| 📱 **Mobile** | Responsive down to 360px, installable as a PWA |
+| 🔔 **Notifications** | Web Push — messages reach the phone with the app closed |
+| 📱 **Mobile** | Responsive down to 360px, installable as a PWA or a real Android APK |
 | 💜 **Personal** | "Days together" counter, custom wallpaper, a thread that starts at your first message |
 
 ---
@@ -213,6 +214,30 @@ runtime and the direct URL only for migrations, and uploads go straight from the
 Cloudinary so the 4.5 MB request body limit never applies.
 
 ---
+
+## The Android app
+
+`.github/workflows/android-apk.yml` wraps the deployed site in a Trusted Web
+Activity and produces a signed APK. Run it from the Actions tab; the APK comes
+back as an artifact.
+
+The app is the same site running inside Chrome, which is the point: Web Push
+already works there, so notifications arrive under the app's own name with
+nothing extra to build. The workflow also reads the signing fingerprint and
+commits it to `src/lib/android.json`, which `/.well-known/assetlinks.json`
+serves — that is what removes the address bar from the top of the app.
+
+The signing key is the part to be careful with. Android refuses an update
+signed by a different key, so the first run creates one, uploads it, and warns
+you to save it. Store it as `ANDROID_KEYSTORE_BASE64` and
+`ANDROID_KEYSTORE_PASSWORD` repository secrets and later builds will reuse it.
+Bump `version_code` on every release.
+
+For notifications to work at all, the VAPID variables must be set in production
+— `npx web-push generate-vapid-keys --json` produces them.
+
+No APK is required, though: **Add to Home Screen** in Chrome gives the same
+app window and the same notifications.
 
 ## Project structure
 
