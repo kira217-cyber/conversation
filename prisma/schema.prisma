@@ -1,0 +1,164 @@
+// Conversation — private couple chat
+// 1-day scoped schema. দুইজনের চ্যাট বলে receipt/attachment আলাদা টেবিল লাগছে না।
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  PARTNER
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VOICE
+  SYSTEM
+}
+
+enum CallStatus {
+  RINGING
+  ONGOING
+  ENDED
+  MISSED
+  REJECTED
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  about        String?
+  role         Role      @default(PARTNER)
+  isActive     Boolean   @default(true)
+  failedLogins Int       @default(0)
+  lockedUntil  DateTime?
+  lastSeenAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions Session[]
+  messages Message[] @relation("Sender")
+  calls    Call[]    @relation("Caller")
+  logs     AuditLog[]
+
+  @@index([email])
+}
+
+/// 🔐 একজন user-এর একটাই active session থাকবে (single-device enforce)
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique
+  deviceId         String
+  deviceLabel      String?
+  ipAddress        String?
+  /// ← ৩০ মিনিট idle check এই ফিল্ডের উপর হয়
+  lastActiveAt     DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  /// NEW_DEVICE_LOGIN | IDLE_TIMEOUT | TAB_CLOSED | MANUAL
+  revokedReason    String?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([lastActiveAt])
+}
+
+model Conversation {
+  id           String    @id @default(uuid())
+  title        String    @default("Us 💜")
+  wallpaper    String?
+  themeColor   String?
+  anniversary  DateTime?
+  pinnedMsgId  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  messages Message[]
+  calls    Call[]
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("Sender", fields: [senderId], references: [id])
+  type           MessageType  @default(TEXT)
+
+  /// একই মেসেজ দুইবার সেভ হওয়া ঠেকায় (retry-safe)
+  clientMsgId    String       @unique
+
+  /// AES-256-GCM ciphertext — DB leak হলেও পড়া যাবে না
+  body           String?
+  bodyIv         String?
+  bodyTag        String?
+
+  // ── media (আলাদা টেবিল না করে inline, ১টা মেসেজে ১টা attachment) ──
+  mediaUrl       String?
+  mediaPublicId  String?
+  mediaMime      String?
+  mediaSize      Int?
+  mediaName      String?
+  mediaWidth     Int?
+  mediaHeight    Int?
+  mediaDuration  Float?
+  /// voice note এর waveform bar heights (0..1)
+  waveform       Float[]      @default([])
+
+  replyToId      String?
+  replyTo        Message?     @relation("Reply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        Message[]    @relation("Reply")
+
+  /// ✓ = createdAt, ✓✓ = deliveredAt, ✓✓ নীল = readAt
+  deliveredAt    DateTime?
+  readAt         DateTime?
+
+  reaction       String?
+  deletedForAll  Boolean      @default(false)
+  deletedForIds  String[]     @default([])
+
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+model Call {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  callerId       String
+  caller         User         @relation("Caller", fields: [callerId], references: [id])
+  status         CallStatus   @default(RINGING)
+  startedAt      DateTime     @default(now())
+  answeredAt     DateTime?
+  endedAt        DateTime?
+  durationSec    Int?
+
+  @@index([conversationId, startedAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  ipAddress String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action])
+}
