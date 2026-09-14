@@ -72,7 +72,9 @@ jobs:
             echo "fresh=false" >> "$GITHUB_OUTPUT"
           else
             echo "No keystore secret — creating one for this build"
-            PW=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+            # Prefer a password that is already a secret, so the key it makes
+            # can be reused later instead of being stranded with a random one.
+            PW="${STORE_PASS:-$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)}"
             keytool -genkeypair -v \
               -keystore twa/android.keystore \
               -alias conversation \
